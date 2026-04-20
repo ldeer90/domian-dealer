@@ -1,0 +1,23 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+processed/
+BuiltWith Exports/
+
+.env
+.env.*
+!.env.example
+
+builtwith.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
