@@ -52,6 +52,14 @@ cp .env.example .env
 export SERANKING_API_KEY=your-se-ranking-api-key
 ```
 
+Optional:
+
+```bash
+export DOMAIN_DEALER_DATA_ROOT=/absolute/path/to/processed
+```
+
+If unset, the backend defaults to the repo's local `processed` folder.
+
 For the Vite frontend, create a frontend env file when you want the app to talk to a hosted backend:
 
 ```bash
@@ -136,6 +144,30 @@ Important:
 - Vercel will only host the frontend from this repo
 - the FastAPI backend still needs to run elsewhere
 - the frontend will not work correctly in production unless `VITE_API_BASE` points at that hosted backend
+
+## Deploy The Backend To Railway
+
+This repo can be deployed to Railway as a backend service, but the main app database is not stored in GitHub.
+
+Recommended Railway settings:
+
+- service source: this GitHub repo
+- root directory: repo root
+- build command: `pip install -r backend/requirements.txt`
+- start command: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+
+Recommended environment variables:
+
+- `SERANKING_API_KEY=your-se-ranking-api-key`
+- `DOMAIN_DEALER_DATA_ROOT=/data`
+
+Important:
+
+- the backend expects `builtwith.db`, `summary.json`, and `filter_options.json` inside `DOMAIN_DEALER_DATA_ROOT`
+- the repo does not include the large `processed/builtwith.db` file
+- in Railway, mount a persistent volume at `/data` and copy your processed files into it
+- the frontend on Vercel should then point to Railway with:
+  - `VITE_API_BASE=https://your-railway-backend-url/api`
 
 ## Current App Features
 

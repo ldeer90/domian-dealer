@@ -24,11 +24,13 @@ from pydantic import BaseModel, Field
 from backend.builtin_presets import BUILTIN_PRESETS, DEFAULT_VISIBLE_COLUMNS
 
 
-ROOT = Path("/Users/laurencedeer/Desktop/BuiltWith")
-DATA_DB_PATH = ROOT / "processed" / "builtwith.db"
-SUMMARY_PATH = ROOT / "processed" / "summary.json"
-FILTER_OPTIONS_PATH = ROOT / "processed" / "filter_options.json"
-STATE_DB_PATH = ROOT / "processed" / "lead_console_state.db"
+APP_ROOT = Path(__file__).resolve().parents[1]
+DATA_ROOT = Path(os.getenv("DOMAIN_DEALER_DATA_ROOT", APP_ROOT / "processed")).resolve()
+
+DATA_DB_PATH = DATA_ROOT / "builtwith.db"
+SUMMARY_PATH = DATA_ROOT / "summary.json"
+FILTER_OPTIONS_PATH = DATA_ROOT / "filter_options.json"
+STATE_DB_PATH = DATA_ROOT / "lead_console_state.db"
 
 DEFAULT_PAGE_SIZE = 100
 MAX_PAGE_SIZE = 1000
