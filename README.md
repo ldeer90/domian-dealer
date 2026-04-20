@@ -52,6 +52,13 @@ cp .env.example .env
 export SERANKING_API_KEY=your-se-ranking-api-key
 ```
 
+For the Vite frontend, create a frontend env file when you want the app to talk to a hosted backend:
+
+```bash
+cd /Users/laurencedeer/Desktop/BuiltWith/frontend
+cp .env.example .env
+```
+
 ### Frontend dependencies
 
 ```bash
@@ -103,12 +110,32 @@ Frontend URL:
 
 - `http://127.0.0.1:5173`
 
+The frontend reads its API base from `VITE_API_BASE`. If unset, it falls back to the local backend:
+
+- `http://127.0.0.1:8765/api`
+
 ## Build The Frontend
 
 ```bash
 cd /Users/laurencedeer/Desktop/BuiltWith/frontend
 npm run build
 ```
+
+## Deploy The Frontend To Vercel
+
+This repo includes a root `vercel.json` that builds the Vite app from the `frontend` folder.
+
+In Vercel, set:
+
+- project root: repo root
+- framework: Vite or auto-detect
+- environment variable: `VITE_API_BASE=https://your-backend-url/api`
+
+Important:
+
+- Vercel will only host the frontend from this repo
+- the FastAPI backend still needs to run elsewhere
+- the frontend will not work correctly in production unless `VITE_API_BASE` points at that hosted backend
 
 ## Current App Features
 
