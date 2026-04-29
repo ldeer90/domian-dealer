@@ -29,6 +29,7 @@ def base_query() -> dict[str, object]:
         "verticals": [],
         "salesBuckets": [],
         "migrationOnly": False,
+        "liveSitesOnly": False,
         "hasDomainMigration": False,
         "hasCmsMigration": False,
         "domainMigrationStatuses": [],
@@ -49,6 +50,7 @@ def base_query() -> dict[str, object]:
         "timelineSeenTo": "",
         "cmsMigrationFrom": "",
         "cmsMigrationTo": "",
+        "cmsUnchangedYears": "",
         "domainMigrationFrom": "",
         "domainMigrationTo": "",
         "migrationTimingOperator": "and",
@@ -88,6 +90,18 @@ def make_preset(
 
 BUILTIN_PRESETS = [
     make_preset(
+        "builtin_live_sites_only",
+        "Live sites only",
+        "Discovery",
+        "Only domains with a current platform detection, excluding removed-only and historical-only rows.",
+        {
+            "liveSitesOnly": True,
+            "tiers": ["A", "B", "C", "D"],
+        },
+        sort_by="total_score",
+        order=1,
+    ),
+    make_preset(
         "builtin_confirmed_migration_shortlist",
         "Confirmed migration shortlist",
         "Reliability",
@@ -99,7 +113,7 @@ BUILTIN_PRESETS = [
             "cmsMigrationStatuses": ["confirmed"],
         },
         sort_by="total_score",
-        order=1,
+        order=10,
     ),
     make_preset(
         "builtin_possible_migrations_review",
@@ -112,7 +126,7 @@ BUILTIN_PRESETS = [
             "cmsMigrationStatuses": ["possible", "overlap", "historic"],
         },
         sort_by="cms_migration_status",
-        order=2,
+        order=20,
     ),
     make_preset(
         "builtin_redirect_only_domain_candidates",
@@ -126,7 +140,7 @@ BUILTIN_PRESETS = [
             "tiers": ["A", "B", "C", "D"],
         },
         sort_by="domain_migration_status",
-        order=3,
+        order=30,
     ),
     make_preset(
         "builtin_same_tld_domain_migrations",
@@ -139,7 +153,7 @@ BUILTIN_PRESETS = [
             "tiers": ["A", "B", "C", "D"],
         },
         sort_by="domain_migration_status",
-        order=4,
+        order=40,
     ),
     make_preset(
         "builtin_migration_leads",
@@ -152,7 +166,7 @@ BUILTIN_PRESETS = [
             "hasContact": True,
         },
         sort_by="domain_migration_status",
-        order=5,
+        order=50,
     ),
     make_preset(
         "builtin_domain_migration_leads",
@@ -165,7 +179,7 @@ BUILTIN_PRESETS = [
             "hasContact": True,
         },
         sort_by="domain_migration_status",
-        order=7,
+        order=70,
     ),
     make_preset(
         "builtin_cms_migration_leads",
@@ -178,7 +192,7 @@ BUILTIN_PRESETS = [
             "hasContact": True,
         },
         sort_by="cms_migration_status",
-        order=8,
+        order=80,
     ),
     make_preset(
         "builtin_high_confidence_migration",
@@ -193,7 +207,7 @@ BUILTIN_PRESETS = [
             "hasContact": True,
         },
         sort_by="domain_migration_status",
-        order=9,
+        order=90,
     ),
     make_preset(
         "builtin_recent_migration",

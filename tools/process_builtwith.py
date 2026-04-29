@@ -6,6 +6,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -13,6 +14,7 @@ from typing import Iterable
 ROOT = Path("/Users/laurencedeer/Desktop/BuiltWith")
 RAW_DIR = ROOT / "BuiltWith Exports"
 PROCESSED_DIR = ROOT / "processed"
+SOURCE_MANIFEST_PATH = ROOT / "config" / "builtwith_source_manifest.csv"
 TARGET_COUNTRIES = {"AU", "NZ", "SG"}
 BAD_FILE_NAMES = {"Woocommrce Cehcout sited no longer detected APEC.csv"}
 PREMIUM_HOSTS = {
@@ -39,7 +41,18 @@ PLATFORM_SNAPSHOT_HINTS = {
     "prestashop": {"prestashop"},
     "opencart": {"opencart", "ocstore"},
     "neto": {"neto", "maropost commerce cloud", "maropost commerce"},
+    "wordpress": {"wordpress"},
+    "wix": {"wix", "wix hosted", "wix peppyaka", "wix pepyaka"},
+    "squarespace": {"squarespace"},
+    "webflow": {"webflow"},
+    "drupal": {"drupal", "govcms"},
+    "joomla": {"joomla"},
+    "duda": {"duda", "dudamobile"},
+    "craft": {"craft"},
+    "umbraco": {"umbraco"},
+    "framer": {"framer"},
 }
+
 CMS_STATUS_PRIORITY = {
     "confirmed": 5,
     "possible": 4,
@@ -62,12 +75,42 @@ class SourceMeta:
     folder_name: str
     event_type: str
     platform: str
+    include: bool = True
+    confidence: str = ""
+    manifest_report_type: str = ""
+    manifest_notes: str = ""
+
+
+@lru_cache(maxsize=1)
+def load_source_manifest() -> dict[str, dict[str, str]]:
+    if not SOURCE_MANIFEST_PATH.exists():
+        return {}
+    with SOURCE_MANIFEST_PATH.open("r", encoding="utf-8-sig", newline="") as handle:
+        return {clean_text(row.get("relative_path", "")): row for row in csv.DictReader(handle) if clean_text(row.get("relative_path", ""))}
 
 
 def classify_source(path: Path) -> SourceMeta:
     file_name = path.name
     name = file_name.lower()
     folder = path.parent.name.lower()
+    relative_name = path.relative_to(RAW_DIR).as_posix()
+
+    manifest_row = load_source_manifest().get(relative_name)
+    if manifest_row:
+        include = clean_text(manifest_row.get("include", "")).lower() == "true"
+        event_type = clean_text(manifest_row.get("report_type", "")) if include else "excluded"
+        platform = clean_text(manifest_row.get("primary_cms", "")) or "unknown"
+        return SourceMeta(
+            path=path,
+            file_name=file_name,
+            folder_name=path.parent.name,
+            event_type=event_type,
+            platform=platform,
+            include=include,
+            confidence=clean_text(manifest_row.get("confidence", "")),
+            manifest_report_type=clean_text(manifest_row.get("report_type", "")),
+            manifest_notes=clean_text(manifest_row.get("notes", "")),
+        )
 
     if "recently" in folder or "recently" in name:
         event_type = "recently_added"
@@ -75,11 +118,23 @@ def classify_source(path: Path) -> SourceMeta:
         event_type = "no_longer_detected"
     elif "current" in folder or "current" in name:
         event_type = "current_detected"
+    elif path.as_posix().lower().find("/new cms exports/") != -1 and ("websites in " in name or name.startswith("au_")):
+        event_type = "current_detected"
     else:
         event_type = "unknown"
 
     platform = "unknown"
     labels = [
+        ("wordpress", "wordpress"),
+        ("squarespace", "squarespace"),
+        ("webflow", "webflow"),
+        ("drupal", "drupal"),
+        ("joomla", "joomla"),
+        ("duda", "duda"),
+        ("craft", "craft"),
+        ("umbraco", "umbraco"),
+        ("framer", "framer"),
+        ("wix", "wix"),
         ("shopify plus", "shopify_plus"),
         ("woocommerce checkout", "woocommerce_checkout"),
         ("woocommrce cehcout", "woocommerce_checkout"),
@@ -91,10 +146,11 @@ def classify_source(path: Path) -> SourceMeta:
         ("neto", "neto"),
         ("shopify", "shopify"),
     ]
-    for needle, label in labels:
-        if needle in name:
-            platform = label
-            break
+    if platform == "unknown":
+        for needle, label in labels:
+            if needle in name:
+                platform = label
+                break
 
     return SourceMeta(
         path=path,
@@ -384,6 +440,8 @@ def load_rows() -> tuple[list[dict[str, str]], list[dict[str, str]], dict[str, o
             reader = csv.DictReader(handle)
             for raw in reader:
                 file_rows += 1
+                if not meta.include:
+                    continue
                 root_domain = normalize_domain(raw.get("Root Domain", ""))
                 country = clean_text(raw.get("Country", "")).upper()
                 if not root_domain:
@@ -450,6 +508,10 @@ def load_rows() -> tuple[list[dict[str, str]], list[dict[str, str]], dict[str, o
                 "folder_name": meta.folder_name,
                 "event_type": meta.event_type,
                 "platform": meta.platform,
+                "include": meta.include,
+                "confidence": meta.confidence,
+                "manifest_report_type": meta.manifest_report_type,
+                "notes": meta.manifest_notes,
                 "total_rows": file_rows,
                 "target_rows": target_rows,
             }
@@ -463,8 +525,89 @@ def load_rows() -> tuple[list[dict[str, str]], list[dict[str, str]], dict[str, o
         "valid_source_file_count": len(summary_files),
         "invalid_rows_without_domain": invalid_rows,
         "source_files": summary_files,
+        "source_coverage": build_source_coverage(summary_files),
     }
     return platform_events, summary_files, metadata
+
+
+def build_source_coverage(summary_files: list[dict[str, object]]) -> list[dict[str, object]]:
+    service_platforms = ["wordpress", "wix", "squarespace", "webflow", "drupal", "joomla", "duda", "craft", "umbraco", "framer"]
+    coverage: dict[str, dict[str, object]] = {
+        platform: {
+            "platform": platform,
+            "hasCurrent": False,
+            "hasRecent": False,
+            "hasRemoved": False,
+            "currentFiles": 0,
+            "recentFiles": 0,
+            "removedFiles": 0,
+            "quarantinedFiles": 0,
+            "rowCount": 0,
+            "targetRows": 0,
+            "confidence": "none",
+            "timingQuality": "untrusted",
+            "notes": [],
+        }
+        for platform in service_platforms
+    }
+    confidence_rank = {"none": 0, "low": 1, "needs_review": 2, "medium": 3, "high": 4}
+
+    for source in summary_files:
+        platform = clean_text(str(source.get("platform", "")))
+        source_platform = clean_text(str(source.get("source_platform", "")))
+        if not platform or platform == "unknown":
+            platform = source_platform
+        if platform not in coverage:
+            continue
+
+        entry = coverage[platform]
+        include = bool(source.get("include", True))
+        event_type = clean_text(str(source.get("event_type", "")))
+        target_rows = int(source.get("target_rows", 0) or 0)
+        total_rows = int(source.get("total_rows", 0) or 0)
+        entry["rowCount"] = int(entry["rowCount"]) + total_rows
+        entry["targetRows"] = int(entry["targetRows"]) + target_rows
+
+        confidence = clean_text(str(source.get("confidence", ""))) or "none"
+        if confidence_rank.get(confidence, 0) > confidence_rank.get(str(entry["confidence"]), 0):
+            entry["confidence"] = confidence
+
+        if not include:
+            entry["quarantinedFiles"] = int(entry["quarantinedFiles"]) + 1
+            continue
+
+        if event_type == "current_detected":
+            entry["hasCurrent"] = True
+            entry["currentFiles"] = int(entry["currentFiles"]) + 1
+        elif event_type == "recently_added":
+            entry["hasRecent"] = True
+            entry["recentFiles"] = int(entry["recentFiles"]) + 1
+        elif event_type == "no_longer_detected":
+            entry["hasRemoved"] = True
+            entry["removedFiles"] = int(entry["removedFiles"]) + 1
+
+    for entry in coverage.values():
+        if entry["hasCurrent"] and entry["hasRecent"] and entry["hasRemoved"]:
+            entry["timingQuality"] = "complete"
+        elif entry["hasCurrent"] and entry["hasRemoved"]:
+            entry["timingQuality"] = "partial"
+        elif entry["hasCurrent"] and entry["hasRecent"]:
+            entry["timingQuality"] = "partial_recent_only"
+        elif entry["hasCurrent"]:
+            entry["timingQuality"] = "current_only"
+        else:
+            entry["timingQuality"] = "untrusted"
+
+        notes: list[str] = []
+        if not entry["hasRemoved"]:
+            notes.append("Missing no-longer-detected export")
+        if not entry["hasRecent"]:
+            notes.append("Missing recently-added export")
+        if entry["quarantinedFiles"]:
+            notes.append(f"{entry['quarantinedFiles']} quarantined file(s)")
+        entry["notes"] = notes
+
+    return list(coverage.values())
 
 
 def build_technology_timelines(platform_events: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -1197,6 +1340,26 @@ def write_sqlite(
 
     connection.execute(
         """
+        create table cms_stability as
+        select
+            leads.root_domain,
+            min(case when tt.has_current_detected = 1 then tt.first_detected end) as oldest_current_first_detected,
+            max(case when tt.has_current_detected = 1 then tt.first_detected end) as newest_current_first_detected,
+            max(
+                case
+                    when coalesce(cmp.migration_status, 'none') not in ('none', 'removed_only')
+                    then coalesce(cmp.likely_migration_date, cmp.first_new_detected)
+                end
+            ) as latest_cms_change_date
+        from leads
+        left join technology_timelines tt on tt.root_domain = leads.root_domain
+        left join cms_migration_pairs_v2 cmp on cmp.root_domain = leads.root_domain
+        group by leads.root_domain
+        """
+    )
+
+    connection.execute(
+        """
         insert into leads_search(rowid, root_domain, company, vertical, recently_added_platforms, removed_platforms, crm_platforms, marketing_platforms, payment_platforms, hosting_providers)
         select rowid, root_domain, company, vertical, recently_added_platforms, removed_platforms, crm_platforms, marketing_platforms, payment_platforms, hosting_providers
         from leads
@@ -1222,9 +1385,15 @@ def write_sqlite(
     connection.execute("create index idx_timelines_platform_detected on technology_timelines(platform, first_detected)")
     connection.execute("create index idx_timelines_platform_last_found on technology_timelines(platform, last_found)")
     connection.execute("create index idx_timelines_detected on technology_timelines(first_detected)")
+    connection.execute("create index idx_timelines_current_detected_domain on technology_timelines(has_current_detected, first_detected, root_domain)")
     connection.execute("create index idx_migrations_domain on migration_pairs(root_domain)")
     connection.execute("create index idx_cms_v2_domain on cms_migration_pairs_v2(root_domain)")
     connection.execute("create index idx_cms_v2_status on cms_migration_pairs_v2(migration_status)")
+    connection.execute("create index idx_cms_v2_recent_change on cms_migration_pairs_v2(migration_status, likely_migration_date, first_new_detected, root_domain)")
+    connection.execute("create unique index idx_cms_stability_domain on cms_stability(root_domain)")
+    connection.execute("create index idx_cms_stability_oldest on cms_stability(oldest_current_first_detected)")
+    connection.execute("create index idx_cms_stability_newest on cms_stability(newest_current_first_detected)")
+    connection.execute("create index idx_cms_stability_latest_change on cms_stability(latest_cms_change_date)")
 
     connection.commit()
     connection.close()

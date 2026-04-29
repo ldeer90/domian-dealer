@@ -1,0 +1,15 @@
+{
+  "family": "magento",
+  "label": "Magento / Adobe Commerce",
+  "max_seed_urls": 10,
+  "max_category_urls": 5,
+  "max_product_urls": 4,
+  "max_service_urls": 0,
+  "max_location_urls": 0,
+  "max_other_urls": 1,
+  "timeout_seconds": 300,
+  "category_patterns": ["/category(/|$)", "/categories(/|$)", "/catalog(/|$)"],
+  "product_patterns": ["/product(/|$)", "\\.html$"],
+  "service_patterns": [],
+  "location_patterns": []
+}

@@ -1,0 +1,15 @@
+{
+  "family": "woocommerce",
+  "label": "WooCommerce",
+  "max_seed_urls": 10,
+  "max_category_urls": 5,
+  "max_product_urls": 4,
+  "max_service_urls": 0,
+  "max_location_urls": 0,
+  "max_other_urls": 1,
+  "timeout_seconds": 240,
+  "category_patterns": ["/product-category(/|$)", "/category(/|$)", "/shop(/|$)"],
+  "product_patterns": ["/product(/|$)"],
+  "service_patterns": [],
+  "location_patterns": []
+}

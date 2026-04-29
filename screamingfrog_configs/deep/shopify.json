@@ -1,0 +1,15 @@
+{
+  "family": "shopify",
+  "label": "Shopify",
+  "max_seed_urls": 31,
+  "max_category_urls": 8,
+  "max_product_urls": 20,
+  "max_service_urls": 0,
+  "max_location_urls": 0,
+  "max_other_urls": 2,
+  "timeout_seconds": 480,
+  "category_patterns": ["/collections?(/|$)", "/category(/|$)", "/categories(/|$)"],
+  "product_patterns": ["/products?(/|$)", "/product(/|$)"],
+  "service_patterns": [],
+  "location_patterns": []
+}

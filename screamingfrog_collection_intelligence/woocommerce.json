@@ -1,0 +1,31 @@
+{
+  "family": "woocommerce",
+  "page_type": "collection",
+  "collection_detection": [
+    { "type": "url_regex", "value": "/(product-category|category)(/|$)", "confidence": 92 },
+    { "type": "schema_type", "value": "CollectionPage", "confidence": 84 }
+  ],
+  "fields": {},
+  "title_rules": {
+    "default_exact": [
+      "{term}",
+      "{term} | {site}",
+      "{term} - {site}",
+      "{term} – {site}"
+    ],
+    "default_like": [
+      "{term} Archives | {site}",
+      "{term}: {site}",
+      "{term} category | {site}"
+    ],
+    "term_plus_site": [
+      "{term} | {brand}",
+      "{term} | {site}"
+    ],
+    "safe_customised": [
+      "Buy {term} Online | {site}",
+      "{term} Products | {site}",
+      "{term} Range | {site}"
+    ]
+  }
+}

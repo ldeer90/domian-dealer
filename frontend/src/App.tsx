@@ -1,47 +1,66 @@
-import { startTransition, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  addFilteredToExportTray,
   addToExportTray,
   clearExportTray,
   createPreset,
   deletePreset,
   exportLeadUrl,
-  fetchAnalytics,
   fetchExportTray,
   fetchFilterOptions,
+  fetchHealth,
   fetchLeadDetail,
   fetchLeads,
   fetchPresets,
+  fetchScreamingFrogJobStatus,
+  fetchScreamingFrogSummary,
   fetchSeRankingSummary,
+  fetchSiteStatusSummary,
   fetchSummary,
-  fetchTimelineCohort,
+  previewManualSeRankingAnalysis,
+  refreshScreamingFrogAudit,
+  refreshSiteStatusCheck,
   refreshSeRankingAnalysis,
   removeFromExportTray,
+  runScreamingFrogAudit,
+  runSiteStatusCheck,
+  runManualSeRankingAnalysis,
   runSeRankingAnalysis,
-  updatePreset,
+  stopScreamingFrogJobBatch,
 } from "./api";
 import type {
-  AnalyticsResponse,
   ExportTrayResponse,
   FilterOptions,
+  HealthResponse,
   Lead,
   LeadDetailResponse,
   LeadQuery,
   LeadsResponse,
   MigrationTimingOperator,
   Preset,
+  ScreamingFrogJobBatch,
+  ScreamingFrogRunResponse,
+  ScreamingFrogSummaryResponse,
+  SeRankingManualPreviewResponse,
   SeRankingSummaryResponse,
+  SiteStatusSummaryResponse,
   SummaryResponse,
-  TimelineCohortResponse,
   TimelineDateField,
   TimelineEventType,
   TimelineGranularity,
   TimelineRow,
 } from "./types";
 
+const FILTER_SEARCH_THRESHOLD = 14;
+
 type ColumnKey =
   | "country"
   | "vertical"
   | "current_platforms"
+  | "social"
+  | "sales_revenue"
+  | "employees"
+  | "sku"
   | "domain_migration"
   | "cms_migration"
   | "domain_fingerprint_strength"
@@ -57,6 +76,13 @@ type ColumnKey =
   | "technology_spend"
   | "total_score"
   | "priority_tier"
+  | "marketing_platforms"
+  | "crm_platforms"
+  | "payment_platforms"
+  | "hosting_providers"
+  | "agencies"
+  | "ai_tools"
+  | "compliance_flags"
   | "reason"
   | "se_market"
   | "se_traffic_before"
@@ -66,9 +92,50 @@ type ColumnKey =
   | "se_keywords_last_month"
   | "se_keyword_change"
   | "se_outcome"
-  | "se_checked";
+  | "se_checked"
+  | "site_status"
+  | "site_status_code"
+  | "site_final_url"
+  | "site_checked"
+  | "sf_status"
+  | "sf_config"
+  | "sf_quality"
+  | "sf_score"
+  | "sf_primary_issue"
+  | "sf_checked"
+  | "sf_pages_crawled"
+  | "sf_homepage_status"
+  | "sf_title_issues"
+  | "sf_meta_issues"
+  | "sf_canonical_issues"
+  | "sf_internal_errors"
+  | "sf_location_pages"
+  | "sf_service_pages"
+  | "sf_strengths"
+  | "sf_issue_signals"
+  | "sf_heading_health"
+  | "sf_evidence"
+  | "sf_collection_detection"
+  | "sf_collection_intro"
+  | "sf_collection_snippet"
+  | "sf_collection_title_signal"
+  | "sf_collection_confidence"
+  | "sf_title_optimization"
+  | "sf_collection_products"
+  | "sf_collection_schema";
 
 type SeRankingAnalysisType = "cms_migration" | "domain_migration";
+type ScreamingFrogCrawlMode = "bounded_audit" | "deep_audit";
+type InlineRunStatus = {
+  tone: "neutral" | "positive" | "warning";
+  label: string;
+  message: string;
+} | null;
+
+type BackendConnectionState = "checking" | "connected" | "degraded" | "offline";
+type LeadTableState = "loading" | "ready" | "empty" | "retrying" | "error";
+
+const BACKEND_APP_BASE = (((import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8765/api").replace(/\/api\/?$/, ""));
 
 const DEFAULT_TIMELINE_EVENT_TYPES: TimelineEventType[] = ["current_detected", "recently_added"];
 const TIMELINE_EVENT_LABELS: Record<TimelineEventType, string> = {
@@ -92,6 +159,16 @@ const FRIENDLY_LABELS: Record<string, string> = {
   woocommerce: "WooCommerce",
   woocommerce_checkout: "WooCommerce Checkout",
   bigcommerce: "BigCommerce",
+  wordpress: "WordPress",
+  wix: "Wix",
+  squarespace: "Squarespace",
+  webflow: "Webflow",
+  drupal: "Drupal",
+  joomla: "Joomla",
+  duda: "Duda",
+  craft: "Craft CMS",
+  umbraco: "Umbraco",
+  framer: "Framer",
   opencart: "OpenCart",
   prestashop: "PrestaShop",
   magento: "Magento",
@@ -172,6 +249,24 @@ const FRIENDLY_LABELS: Record<string, string> = {
   success: "Available",
   partial: "Partial",
   error: "Error",
+  ok: "Live",
+  redirect: "Redirecting",
+  not_found: "404",
+  server_error: "Server error",
+  blocked: "Blocked",
+  timeout: "Timeout",
+  dns_error: "DNS error",
+  ssl_error: "SSL error",
+  other_error: "Other error",
+  bounded_audit: "Bounded audit",
+  deep_audit: "Deep audit",
+  client_error: "Client error",
+  missing: "Missing",
+  duplicate: "Duplicate",
+  too_long: "Too long",
+  too_short: "Too short",
+  non_indexable: "Non-indexable",
+  inconsistent: "Inconsistent",
 };
 
 const PLATFORM_COLOURS: Record<string, string> = {
@@ -179,6 +274,16 @@ const PLATFORM_COLOURS: Record<string, string> = {
   shopify_plus: "#1d4ed8",
   woocommerce_checkout: "#7c3aed",
   bigcommerce: "#0f7b6c",
+  wordpress: "#21759b",
+  wix: "#6c5ce7",
+  squarespace: "#111827",
+  webflow: "#2563eb",
+  drupal: "#0b6cad",
+  joomla: "#f57c00",
+  duda: "#7c3aed",
+  craft: "#e5422b",
+  umbraco: "#3544b1",
+  framer: "#111111",
   opencart: "#b54708",
   prestashop: "#c11574",
   magento: "#d92d20",
@@ -192,19 +297,26 @@ const defaultVisibleColumns: ColumnKey[] = [
   "country",
   "vertical",
   "current_platforms",
-  "domain_migration",
   "cms_migration",
-  "domain_migration_date",
   "cms_migration_date",
-  "domain_fingerprint_strength",
-  "domain_shared_signals",
+  "domain_migration",
+  "domain_migration_date",
   "sales_buckets",
-  "contact_status",
   "technology_spend",
   "total_score",
   "priority_tier",
+  "domain_fingerprint_strength",
+  "domain_shared_signals",
   "reason",
+  "contact_status",
 ];
+
+const MIGRATION_DATE_PRESETS = [
+  { label: "3m", months: 3 },
+  { label: "6m", months: 6 },
+  { label: "12m", months: 12 },
+  { label: "23m", months: 23 },
+] as const;
 
 const initialQuery: LeadQuery = {
   search: "",
@@ -216,6 +328,7 @@ const initialQuery: LeadQuery = {
   removedPlatforms: [],
   verticals: [],
   salesBuckets: [],
+  liveSitesOnly: false,
   migrationOnly: false,
   hasDomainMigration: false,
   hasCmsMigration: false,
@@ -229,10 +342,33 @@ const initialQuery: LeadQuery = {
   hasMarketing: false,
   hasCrm: false,
   hasPayments: false,
+  marketingPlatforms: [],
+  crmPlatforms: [],
+  paymentPlatforms: [],
+  hostingProviders: [],
+  agencies: [],
+  aiTools: [],
+  complianceFlags: [],
+  minSocial: "",
+  minRevenue: "",
+  minEmployees: "",
+  minSku: "",
+  minTechnologySpend: "",
   selectedOnly: false,
   hasSeRankingAnalysis: false,
   seRankingAnalysisTypes: [],
   seRankingOutcomeFlags: [],
+  hasSiteStatusCheck: false,
+  siteStatusCategories: [],
+  hasScreamingFrogAudit: false,
+  screamingFrogStatuses: [],
+  screamingFrogHomepageStatuses: [],
+  screamingFrogTitleFlags: [],
+  screamingFrogMetaFlags: [],
+  screamingFrogCanonicalFlags: [],
+  hasScreamingFrogInternalErrors: false,
+  hasScreamingFrogLocationPages: false,
+  hasScreamingFrogServicePages: false,
   timelinePlatforms: [],
   timelineEventTypes: DEFAULT_TIMELINE_EVENT_TYPES,
   timelineDateField: "first_seen",
@@ -240,6 +376,7 @@ const initialQuery: LeadQuery = {
   timelineSeenTo: "",
   cmsMigrationFrom: "",
   cmsMigrationTo: "",
+  cmsUnchangedYears: "",
   domainMigrationFrom: "",
   domainMigrationTo: "",
   migrationTimingOperator: "and",
@@ -261,6 +398,11 @@ const sortLabels: Record<string, string> = {
   bucket_count: "Bucket count",
   domain_migration_estimated_date: "Domain migration date",
   se_ranking_checked_at: "SE checked",
+  site_status_checked_at: "Site checked",
+  site_status_code: "Status code",
+  screamingfrog_checked_at: "SF checked",
+  screamingfrog_pages_crawled: "Pages crawled",
+  screamingfrog_opportunity_score: "SF score",
   matched_first_detected: "First seen",
   matched_last_found: "Last seen",
   domain_migration_status: "Previous domain",
@@ -276,17 +418,51 @@ const columnLabels: Record<ColumnKey, string> = {
   country: "Country",
   vertical: "Vertical",
   current_platforms: "Current platform",
+  social: "Followers",
+  sales_revenue: "Revenue",
+  employees: "Employees",
+  sku: "SKU",
   domain_migration: "Previous domain candidate",
   cms_migration: "Possible CMS migration",
   se_market: "SE market",
-  se_traffic_before: "Traffic before",
-  se_traffic_last_month: "Traffic last month",
+  se_traffic_before: "Traffic first month",
+  se_traffic_last_month: "Traffic second month",
   se_traffic_change: "Traffic change",
-  se_keywords_before: "Keywords before",
-  se_keywords_last_month: "Keywords last month",
+  se_keywords_before: "Keywords first month",
+  se_keywords_last_month: "Keywords second month",
   se_keyword_change: "Keyword change",
   se_outcome: "Outcome",
   se_checked: "SE checked",
+  site_status: "Site status",
+  site_status_code: "Status code",
+  site_final_url: "Final URL",
+  site_checked: "Site checked",
+  sf_status: "SF status",
+  sf_config: "SF config",
+  sf_quality: "SF quality",
+  sf_score: "SF score",
+  sf_primary_issue: "SF primary issue",
+  sf_checked: "SF checked",
+  sf_pages_crawled: "Pages crawled",
+  sf_homepage_status: "Homepage status",
+  sf_title_issues: "Title issues",
+  sf_meta_issues: "Meta issues",
+  sf_canonical_issues: "Canonical issues",
+  sf_internal_errors: "Internal errors",
+  sf_location_pages: "Location pages",
+  sf_service_pages: "Service pages",
+  sf_strengths: "SF strengths",
+  sf_issue_signals: "SF issues",
+  sf_heading_health: "Heading health",
+  sf_evidence: "SF evidence",
+  sf_collection_detection: "Collection detection",
+  sf_collection_intro: "Collection intro",
+  sf_collection_snippet: "Collection snippet",
+  sf_collection_title_signal: "Collection title signal",
+  sf_collection_confidence: "Collection confidence",
+  sf_title_optimization: "Title optimisation",
+  sf_collection_products: "Collection products",
+  sf_collection_schema: "Collection schema",
   domain_fingerprint_strength: "Fingerprint",
   domain_shared_signals: "Shared signals",
   removed_platforms: "Previous platform seen",
@@ -300,11 +476,36 @@ const columnLabels: Record<ColumnKey, string> = {
   technology_spend: "Tech spend",
   total_score: "Score",
   priority_tier: "Tier",
+  marketing_platforms: "Marketing tools",
+  crm_platforms: "CRM tools",
+  payment_platforms: "Payment tools",
+  hosting_providers: "Hosting",
+  agencies: "Agency",
+  ai_tools: "AI tools",
+  compliance_flags: "Compliance",
   reason: "Why this lead",
 };
 
 function toggle(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function splitPipe(value: string) {
+  return value
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
 function normalizeLeadQuery(raw?: Partial<LeadQuery>): LeadQuery {
@@ -320,6 +521,7 @@ function normalizeLeadQuery(raw?: Partial<LeadQuery>): LeadQuery {
     removedPlatforms: raw?.removedPlatforms ?? initialQuery.removedPlatforms,
     verticals: raw?.verticals ?? initialQuery.verticals,
     salesBuckets: raw?.salesBuckets ?? initialQuery.salesBuckets,
+    liveSitesOnly: raw?.liveSitesOnly ?? initialQuery.liveSitesOnly,
     hasDomainMigration: raw?.hasDomainMigration ?? initialQuery.hasDomainMigration,
     hasCmsMigration: raw?.hasCmsMigration ?? initialQuery.hasCmsMigration,
     domainMigrationStatuses: raw?.domainMigrationStatuses ?? initialQuery.domainMigrationStatuses,
@@ -328,9 +530,32 @@ function normalizeLeadQuery(raw?: Partial<LeadQuery>): LeadQuery {
     domainTldRelationships: raw?.domainTldRelationships ?? initialQuery.domainTldRelationships,
     cmsMigrationStatuses: raw?.cmsMigrationStatuses ?? initialQuery.cmsMigrationStatuses,
     cmsConfidenceLevels: raw?.cmsConfidenceLevels ?? initialQuery.cmsConfidenceLevels,
+    marketingPlatforms: raw?.marketingPlatforms ?? initialQuery.marketingPlatforms,
+    crmPlatforms: raw?.crmPlatforms ?? initialQuery.crmPlatforms,
+    paymentPlatforms: raw?.paymentPlatforms ?? initialQuery.paymentPlatforms,
+    hostingProviders: raw?.hostingProviders ?? initialQuery.hostingProviders,
+    agencies: raw?.agencies ?? initialQuery.agencies,
+    aiTools: raw?.aiTools ?? initialQuery.aiTools,
+    complianceFlags: raw?.complianceFlags ?? initialQuery.complianceFlags,
+    minSocial: raw?.minSocial ?? initialQuery.minSocial,
+    minRevenue: raw?.minRevenue ?? initialQuery.minRevenue,
+    minEmployees: raw?.minEmployees ?? initialQuery.minEmployees,
+    minSku: raw?.minSku ?? initialQuery.minSku,
+    minTechnologySpend: raw?.minTechnologySpend ?? initialQuery.minTechnologySpend,
     hasSeRankingAnalysis: raw?.hasSeRankingAnalysis ?? initialQuery.hasSeRankingAnalysis,
     seRankingAnalysisTypes: raw?.seRankingAnalysisTypes ?? initialQuery.seRankingAnalysisTypes,
     seRankingOutcomeFlags: raw?.seRankingOutcomeFlags ?? initialQuery.seRankingOutcomeFlags,
+    hasSiteStatusCheck: raw?.hasSiteStatusCheck ?? initialQuery.hasSiteStatusCheck,
+    siteStatusCategories: raw?.siteStatusCategories ?? initialQuery.siteStatusCategories,
+    hasScreamingFrogAudit: raw?.hasScreamingFrogAudit ?? initialQuery.hasScreamingFrogAudit,
+    screamingFrogStatuses: raw?.screamingFrogStatuses ?? initialQuery.screamingFrogStatuses,
+    screamingFrogHomepageStatuses: raw?.screamingFrogHomepageStatuses ?? initialQuery.screamingFrogHomepageStatuses,
+    screamingFrogTitleFlags: raw?.screamingFrogTitleFlags ?? initialQuery.screamingFrogTitleFlags,
+    screamingFrogMetaFlags: raw?.screamingFrogMetaFlags ?? initialQuery.screamingFrogMetaFlags,
+    screamingFrogCanonicalFlags: raw?.screamingFrogCanonicalFlags ?? initialQuery.screamingFrogCanonicalFlags,
+    hasScreamingFrogInternalErrors: raw?.hasScreamingFrogInternalErrors ?? initialQuery.hasScreamingFrogInternalErrors,
+    hasScreamingFrogLocationPages: raw?.hasScreamingFrogLocationPages ?? initialQuery.hasScreamingFrogLocationPages,
+    hasScreamingFrogServicePages: raw?.hasScreamingFrogServicePages ?? initialQuery.hasScreamingFrogServicePages,
     timelinePlatforms: raw?.timelinePlatforms ?? initialQuery.timelinePlatforms,
     timelineEventTypes: (raw?.timelineEventTypes as TimelineEventType[] | undefined) ?? initialQuery.timelineEventTypes,
     timelineDateField: (raw?.timelineDateField as TimelineDateField | undefined) ?? initialQuery.timelineDateField,
@@ -338,6 +563,7 @@ function normalizeLeadQuery(raw?: Partial<LeadQuery>): LeadQuery {
     timelineSeenTo: raw?.timelineSeenTo ?? legacyRaw?.startedTo ?? initialQuery.timelineSeenTo,
     cmsMigrationFrom: raw?.cmsMigrationFrom ?? initialQuery.cmsMigrationFrom,
     cmsMigrationTo: raw?.cmsMigrationTo ?? initialQuery.cmsMigrationTo,
+    cmsUnchangedYears: raw?.cmsUnchangedYears ?? initialQuery.cmsUnchangedYears,
     domainMigrationFrom: raw?.domainMigrationFrom ?? initialQuery.domainMigrationFrom,
     domainMigrationTo: raw?.domainMigrationTo ?? initialQuery.domainMigrationTo,
     migrationTimingOperator: (raw?.migrationTimingOperator as MigrationTimingOperator | undefined) ?? initialQuery.migrationTimingOperator,
@@ -351,7 +577,26 @@ function normalizeLeadQuery(raw?: Partial<LeadQuery>): LeadQuery {
 
 function ensureColumns(values: string[]) {
   const sanitized = Array.from(new Set(values.filter((value): value is ColumnKey => value in columnLabels)));
-  return sanitized.length ? sanitized : defaultVisibleColumns;
+  const ordered = sanitized.length ? [...sanitized] : [...defaultVisibleColumns];
+  const adjacencyPairs: Array<[ColumnKey, ColumnKey]> = [
+    ["cms_migration", "cms_migration_date"],
+    ["domain_migration", "domain_migration_date"],
+  ];
+
+  adjacencyPairs.forEach(([primary, companion]) => {
+    const primaryIndex = ordered.indexOf(primary);
+    const companionIndex = ordered.indexOf(companion);
+    if (primaryIndex === -1 || companionIndex === -1) {
+      return;
+    }
+    if (companionIndex === primaryIndex + 1) {
+      return;
+    }
+    ordered.splice(companionIndex, 1);
+    ordered.splice(primaryIndex + 1, 0, companion);
+  });
+
+  return ordered;
 }
 
 function humanizeToken(value: string): string {
@@ -390,6 +635,38 @@ function humanizeToken(value: string): string {
     .join(" ");
 }
 
+function describeBackendState(
+  state: BackendConnectionState,
+  health: HealthResponse | null,
+): { label: string; tone: "neutral" | "positive" | "warning" } {
+  if (state === "connected") {
+    return { label: health?.worker_running ? "Backend connected · Crawl worker active" : "Backend connected", tone: "positive" };
+  }
+  if (state === "degraded") {
+    return { label: "Backend degraded", tone: "warning" };
+  }
+  if (state === "offline") {
+    return { label: "Backend unavailable", tone: "warning" };
+  }
+  return { label: "Checking backend", tone: "neutral" };
+}
+
+function describeLeadLoadState(state: LeadTableState, error: string, hasRows: boolean): string {
+  if (state === "retrying") {
+    return hasRows ? "Database busy or backend reconnecting. Showing the last successful worksheet while retrying." : "Database busy, retrying worksheet load.";
+  }
+  if (state === "loading") {
+    return "Lead data still loading.";
+  }
+  if (state === "error") {
+    return error || "Backend unavailable.";
+  }
+  if (state === "empty") {
+    return "No leads match the current filters.";
+  }
+  return "";
+}
+
 function humanizeReason(reason: string) {
   const [bucket, ...rest] = reason.split(":");
   if (!rest.length) {
@@ -422,10 +699,10 @@ function colourForToken(value: string) {
 
 function confidenceTone(value: string | undefined) {
   const normalized = (value || "").toLowerCase();
-  if (normalized === "high" || normalized === "strong" || normalized === "confirmed") {
+  if (normalized === "high" || normalized === "strong" || normalized === "confirmed" || normalized === "success" || normalized === "up" || normalized === "ok") {
     return "positive";
   }
-  if (normalized === "medium" || normalized === "moderate" || normalized === "possible" || normalized === "probable") {
+  if (normalized === "medium" || normalized === "moderate" || normalized === "possible" || normalized === "probable" || normalized === "redirect" || normalized === "blocked") {
     return "warning";
   }
   if (
@@ -439,11 +716,8 @@ function confidenceTone(value: string | undefined) {
   ) {
     return "neutral";
   }
-  if (normalized === "error" || normalized === "down") {
+  if (normalized === "error" || normalized === "down" || normalized === "not_found" || normalized === "server_error" || normalized === "client_error" || normalized === "timeout" || normalized === "dns_error" || normalized === "ssl_error" || normalized === "other_error") {
     return "warning";
-  }
-  if (normalized === "success" || normalized === "up") {
-    return "positive";
   }
   return "neutral";
 }
@@ -453,10 +727,273 @@ function pillList(values: string[], limit = 3) {
     return <span className="muted">None</span>;
   }
   return values.slice(0, limit).map((value) => (
-    <span className="pill" key={value}>
+    <span className={`pill ${pillToneClass(value)}`} key={value}>
       {humanizeToken(value)}
     </span>
   ));
+}
+
+function pillToneClass(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (
+    [
+      "strong collection intro",
+      "customised titles",
+      "meaningful collection depth",
+    ].includes(normalized)
+  ) {
+    return "pill-positive";
+  }
+  if (
+    [
+      "default_collection_title",
+      "collection_content_gap",
+      "collection_content_unclear",
+      "collection_title_needs_review",
+      "templated_titles",
+      "no_collection_copy",
+      "missing_intro",
+      "boilerplate_only",
+      "mixed_low_confidence",
+      "default_exact",
+      "default_like",
+      "recrawl_slower",
+      "crawl_failed",
+      "internal_errors",
+      "schema_gap",
+    ].includes(normalized)
+  ) {
+    return "pill-warning";
+  }
+  return "pill-neutral";
+}
+
+function screamingFrogStrengths(lead: Lead) {
+  const strengths: string[] = [];
+  if (!lead.screamingfrog_status) {
+    return strengths;
+  }
+  if ((lead.screamingfrog_result_reason || "") === "rate_limited_429" || (lead.screamingfrog_status || "") === "error") {
+    return strengths;
+  }
+  if ((lead.screamingfrog_collection_issue_family || "") === "collection_page_not_reviewable") {
+    return strengths;
+  }
+  if ((lead.screamingfrog_collection_intro_status || "") === "strong_intro" && Number(lead.screamingfrog_collection_best_intro_confidence || 0) >= 75) {
+    strengths.push("strong collection intro");
+  }
+  if (
+    (lead.screamingfrog_title_optimization_status || "") === "customised" &&
+    Number(lead.screamingfrog_title_optimization_confidence || lead.screamingfrog_collection_title_rule_confidence || 0) >= 70
+  ) {
+    strengths.push("customised titles");
+  }
+  if (
+    Number(lead.screamingfrog_collection_product_count || 0) >= 8 &&
+    Number(lead.screamingfrog_collection_detection_confidence || 0) >= 75
+  ) {
+    strengths.push("meaningful collection depth");
+  }
+  return strengths;
+}
+
+function screamingFrogIssueSignals(lead: Lead) {
+  const issues: string[] = [];
+  if (!lead.screamingfrog_status) {
+    return issues;
+  }
+  const pushUnique = (value: string | null | undefined) => {
+    const normalized = (value || "").trim();
+    if (!normalized || issues.includes(normalized)) {
+      return;
+    }
+    issues.push(normalized);
+  };
+  if ((lead.screamingfrog_result_reason || "") === "rate_limited_429") {
+    pushUnique("recrawl_slower");
+  }
+  const titleStatus = (lead.screamingfrog_title_optimization_status || "").trim();
+  const titleConfidence = Number(lead.screamingfrog_title_optimization_confidence || lead.screamingfrog_collection_title_rule_confidence || 0);
+  if (titleStatus === "default_exact") {
+    pushUnique("templated_titles");
+  } else if (titleStatus === "default_like" && titleConfidence >= 80) {
+    pushUnique("templated_titles");
+  }
+  const introStatus = (lead.screamingfrog_collection_intro_status || "").trim();
+  const introConfidence = Number(lead.screamingfrog_collection_best_intro_confidence || lead.screamingfrog_collection_intro_confidence || 0);
+  if (
+    ["missing_intro", "boilerplate_only"].includes(introStatus) ||
+    (introStatus === "mixed_low_confidence" && introConfidence < 55)
+  ) {
+    pushUnique("no_collection_copy");
+  }
+  pushUnique(lead.screamingfrog_collection_issue_family);
+  pushUnique(lead.screamingfrog_primary_issue_family);
+  lead.screamingfrog_collection_content_issue_flags.forEach(pushUnique);
+  lead.screamingfrog_default_title_issue_flags.forEach(pushUnique);
+  lead.screamingfrog_schema_issue_flags.forEach(pushUnique);
+  lead.screamingfrog_product_metadata_issue_flags.forEach(pushUnique);
+  lead.screamingfrog_homepage_issue_flags.forEach(pushUnique);
+  if (Number(lead.screamingfrog_has_internal_errors || 0)) {
+    pushUnique("internal_errors");
+  }
+  const priority = new Map<string, number>([
+    ["recrawl_slower", 0],
+    ["crawl_failed", 1],
+    ["templated_titles", 2],
+    ["default_collection_title", 3],
+    ["no_collection_copy", 4],
+    ["collection_content_gap", 5],
+    ["collection_content_unclear", 6],
+    ["collection_title_needs_review", 7],
+    ["schema_gap", 8],
+    ["internal_errors", 9],
+  ]);
+  return issues
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftPriority = priority.get(left) ?? 99;
+      const rightPriority = priority.get(right) ?? 99;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+      return left.localeCompare(right);
+    });
+}
+
+function screamingFrogHeadingHealth(lead: Lead) {
+  const issues = lead.screamingfrog_heading_issue_flags ?? [];
+  if (!lead.screamingfrog_status) {
+    return { label: "Not audited", note: "No heading read", tone: "neutral" as const };
+  }
+  if (!issues.length) {
+    return { label: "Healthy", note: lead.screamingfrog_heading_outline_summary || "No major heading issues", tone: "positive" as const };
+  }
+  return {
+    label: humanizeToken(issues[0]),
+    note: lead.screamingfrog_heading_outline_summary || `${issues.length} heading flags`,
+    tone: "warning" as const,
+  };
+}
+
+function sourceCoverageLabel(value: string): string {
+  switch (value) {
+    case "complete":
+      return "Complete timing";
+    case "partial":
+      return "Partial timing";
+    case "partial_recent_only":
+      return "Current + recent";
+    case "current_only":
+      return "Current only";
+    default:
+      return "Untrusted";
+  }
+}
+
+function sourceCoverageTone(value: string): "positive" | "warning" | "neutral" {
+  if (value === "complete") {
+    return "positive";
+  }
+  if (value === "partial" || value === "partial_recent_only" || value === "current_only") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function screamingFrogCollectionTitleSignal(lead: Lead) {
+  if (!lead.screamingfrog_status) {
+    return { label: "Not audited", note: "No collection title read", tone: "neutral" as const };
+  }
+  if ((lead.screamingfrog_collection_issue_family || "") === "collection_page_not_reviewable") {
+    return { label: "Unavailable", note: "No reviewable collection/category page captured", tone: "neutral" as const };
+  }
+  if ((lead.screamingfrog_result_reason || "") === "rate_limited_429") {
+    return { label: "Recrawl slower", note: "429 rate limited", tone: "warning" as const };
+  }
+  const status = (lead.screamingfrog_title_optimization_status || "").trim();
+  const confidence = Number(lead.screamingfrog_title_optimization_confidence || lead.screamingfrog_collection_title_rule_confidence || 0);
+  switch (status) {
+    case "default_exact":
+      return { label: "Default CMS title", note: lead.screamingfrog_collection_title_value || "Matches a default collection title pattern", tone: "warning" as const };
+    case "default_like":
+      return confidence >= 80
+        ? { label: "Default-like title", note: lead.screamingfrog_collection_title_value || "Looks close to a CMS template title", tone: "warning" as const }
+        : { label: "Needs review", note: lead.screamingfrog_collection_title_value || "Looks templated but confidence is low", tone: "neutral" as const };
+    case "term_plus_site":
+      return { label: "Templated", note: lead.screamingfrog_collection_title_value || "Looks lightly templated", tone: "neutral" as const };
+    case "customised":
+      return { label: "Customised", note: lead.screamingfrog_collection_title_value || "Title looks intentionally written", tone: "positive" as const };
+    default:
+      return { label: "Unknown", note: lead.screamingfrog_collection_title_value || "No strong collection title read", tone: "neutral" as const };
+  }
+}
+
+function screamingFrogCollectionSnippet(lead: Lead) {
+  if ((lead.screamingfrog_collection_issue_family || "") === "collection_page_not_reviewable") {
+    return { label: "No reliable page", note: "The crawl did not capture a reviewable collection/category page", tone: "warning" as const };
+  }
+  const snippet =
+    (lead.screamingfrog_collection_best_intro_text || "").trim() ||
+    (lead.screamingfrog_collection_above_clean_text || "").trim() ||
+    (lead.screamingfrog_collection_below_clean_text || "").trim();
+  if (!snippet) {
+    return { label: "No cleaned snippet", note: "No trustworthy collection copy extracted", tone: "neutral" as const };
+  }
+  const compact = snippet.length > 160 ? `${snippet.slice(0, 157).trim()}...` : snippet;
+  const position = humanizeToken(
+    (lead.screamingfrog_collection_best_intro_position || lead.screamingfrog_collection_intro_position || "unknown").replace("near_grid", "near grid"),
+  );
+  return { label: position, note: compact, tone: "neutral" as const };
+}
+
+function screamingFrogCollectionConfidence(lead: Lead) {
+  if (!lead.screamingfrog_status) {
+    return { label: "Not audited", note: "No collection read", tone: "neutral" as const };
+  }
+  if ((lead.screamingfrog_collection_issue_family || "") === "collection_page_not_reviewable") {
+    return { label: "N/A", note: "No reviewable collection/category page captured", tone: "warning" as const };
+  }
+  const confidence = Number(lead.screamingfrog_collection_best_intro_confidence || lead.screamingfrog_collection_intro_confidence || 0);
+  if (confidence >= 80) {
+    return { label: `${confidence}%`, note: "High-confidence intro read", tone: "positive" as const };
+  }
+  if (confidence >= 55) {
+    return { label: `${confidence}%`, note: "Usable but mixed", tone: "neutral" as const };
+  }
+  return { label: `${confidence}%`, note: "Low-confidence extraction", tone: "warning" as const };
+}
+
+function screamingFrogEvidenceGrade(lead: Lead) {
+  if (!lead.screamingfrog_status) {
+    return { label: "Not audited", note: "No crawl evidence", tone: "neutral" as const };
+  }
+  if ((lead.screamingfrog_result_reason || "") === "rate_limited_429") {
+    return { label: "Recrawl slower", note: "429 rate limited", tone: "warning" as const };
+  }
+  const pages = Number(lead.screamingfrog_pages_crawled || 0);
+  const seeds = Number(lead.screamingfrog_seed_count || 0);
+  const categories = Number(lead.screamingfrog_category_page_count || 0);
+  const products = Number(lead.screamingfrog_product_page_count || 0);
+  const confidence = Number(lead.screamingfrog_collection_detection_confidence || 0);
+  const resultReason = (lead.screamingfrog_result_reason || "").trim();
+
+  if ((lead.screamingfrog_status || "") === "error") {
+    return { label: "F", note: "Crawl failed", tone: "warning" as const };
+  }
+  if (["no_useful_seeds_found", "redirect_only_homepage", "homepage_fetch_failed"].includes(resultReason) || pages <= 1 || seeds <= 1) {
+    return { label: "D", note: "Thin crawl evidence", tone: "warning" as const };
+  }
+  if (categories >= 5 && pages >= 7 && confidence >= 80) {
+    return { label: "A", note: `${categories} category pages captured`, tone: "positive" as const };
+  }
+  if (categories >= 3 && pages >= 5 && confidence >= 70) {
+    return { label: "B", note: `${categories} category pages captured`, tone: "positive" as const };
+  }
+  if (pages >= 3 && (categories >= 1 || products >= 1 || lead.screamingfrog_seed_strategy === "sitemap")) {
+    return { label: "C", note: "Usable but limited coverage", tone: "neutral" as const };
+  }
+  return { label: "D", note: "Weak crawl evidence", tone: "warning" as const };
 }
 
 function matchingReasonText(lead: Lead, selectedBuckets: string[]) {
@@ -540,8 +1077,26 @@ function columnSortKey(column: ColumnKey) {
       return "cms_migration_likely_date";
     case "domain_migration_date":
       return "domain_migration_estimated_date";
+    case "se_traffic_change":
+      return "se_ranking_traffic_delta_percent";
+    case "se_keyword_change":
+      return "se_ranking_keywords_delta_percent";
     case "se_checked":
       return "se_ranking_checked_at";
+    case "site_status_code":
+      return "site_status_code";
+    case "site_checked":
+      return "site_status_checked_at";
+    case "sf_checked":
+      return "screamingfrog_checked_at";
+    case "sf_pages_crawled":
+      return "screamingfrog_pages_crawled";
+    case "sf_score":
+      return "screamingfrog_opportunity_score";
+    case "sf_collection_detection":
+      return "screamingfrog_collection_detection_confidence";
+    case "sf_collection_products":
+      return "screamingfrog_collection_product_count";
     default:
       return "";
   }
@@ -552,16 +1107,6 @@ function isDefaultTimelineEventSelection(values: TimelineEventType[]) {
     values.length === DEFAULT_TIMELINE_EVENT_TYPES.length &&
     DEFAULT_TIMELINE_EVENT_TYPES.every((value) => values.includes(value))
   );
-}
-
-function quickRange(months: 3 | 6 | 12 | 24) {
-  const end = new Date();
-  const start = new Date(end);
-  start.setMonth(end.getMonth() - months);
-  return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
-  };
 }
 
 function formatMonthYear(value: string | undefined) {
@@ -588,29 +1133,28 @@ function dateWindowLabel(from: string, to: string) {
   return "All time";
 }
 
-function applyDateWindow(
-  patchKeyFrom: keyof LeadQuery,
-  patchKeyTo: keyof LeadQuery,
-  range: 3 | 6 | 12 | 24 | "all",
-): Partial<LeadQuery> {
-  if (range === "all") {
-    return { [patchKeyFrom]: "", [patchKeyTo]: "" } as Partial<LeadQuery>;
-  }
-  const next = quickRange(range);
-  return { [patchKeyFrom]: next.from, [patchKeyTo]: next.to } as Partial<LeadQuery>;
+function isoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
-function quickRangeSelection(from: string, to: string) {
-  if (!from && !to) {
-    return "all";
-  }
-  for (const option of [3, 6, 12, 24] as const) {
-    const range = quickRange(option);
-    if (from === range.from && to === range.to) {
-      return `${option}`;
-    }
-  }
-  return "custom";
+function screamingFrogAuditViewerUrl(rootDomain: string) {
+  return `${BACKEND_APP_BASE}/api/screamingfrog/audit/open?root_domain=${encodeURIComponent(rootDomain)}`;
+}
+
+function startOfMonth(value: Date) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1));
+}
+
+function shiftUtcMonths(value: Date, delta: number) {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + delta, 1));
+}
+
+function migrationPresetWindow(months: number) {
+  const today = new Date();
+  return {
+    from: isoDate(startOfMonth(shiftUtcMonths(today, -(months - 1)))),
+    to: isoDate(today),
+  };
 }
 
 function midpointDate(first: string | undefined, second: string | undefined) {
@@ -623,6 +1167,22 @@ function midpointDate(first: string | undefined, second: string | undefined) {
     return null;
   }
   return new Date((firstTs + secondTs) / 2).toISOString().slice(0, 10);
+}
+
+function seDeltaToneClass(value: number | string | undefined) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric) || numeric === 0) {
+    return "se-delta-neutral";
+  }
+  const abs = Math.abs(numeric);
+  if (numeric > 0) {
+    if (abs >= 50) return "se-delta-positive-strong";
+    if (abs >= 20) return "se-delta-positive-medium";
+    return "se-delta-positive-soft";
+  }
+  if (abs >= 50) return "se-delta-negative-strong";
+  if (abs >= 20) return "se-delta-negative-medium";
+  return "se-delta-negative-soft";
 }
 
 function inferredExactDomain(search: string) {
@@ -656,51 +1216,85 @@ export default function App() {
   const [query, setQuery] = useState<LeadQuery>(initialQuery);
   const [visibleColumns, setVisibleColumns] = useState<ColumnKey[]>(defaultVisibleColumns);
   const [leads, setLeads] = useState<LeadsResponse | null>(null);
-  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [timeline, setTimeline] = useState<TimelineCohortResponse | null>(null);
   const [tray, setTray] = useState<ExportTrayResponse | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [detail, setDetail] = useState<LeadDetailResponse | null>(null);
   const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const [timelineLoading, setTimelineLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [selectionLoading, setSelectionLoading] = useState(false);
   const [error, setError] = useState("");
+  const [backendHealth, setBackendHealth] = useState<HealthResponse | null>(null);
+  const [backendState, setBackendState] = useState<BackendConnectionState>("checking");
+  const [leadTableState, setLeadTableState] = useState<LeadTableState>("loading");
   const [toast, setToast] = useState("");
   const [searchDraft, setSearchDraft] = useState(initialQuery.search);
+  const [exactDomainDraft, setExactDomainDraft] = useState(initialQuery.exactDomain);
   const [verticalSearch, setVerticalSearch] = useState("");
   const [drawerPending, setDrawerPending] = useState<"first" | "last" | null>(null);
   const [showColumnChooser, setShowColumnChooser] = useState(false);
   const [presetNameDraft, setPresetNameDraft] = useState("");
   const [presetModal, setPresetModal] = useState<null | { mode: "save" | "delete" }>(null);
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarSections, setSidebarSections] = useState({
-    search: true,
-    common: true,
-    migration: true,
+    search: false,
+    common: false,
+    migration: false,
+    analysis: false,
     advanced: false,
   });
-  const [analyticsExpanded, setAnalyticsExpanded] = useState(false);
   const [trayCollapsed, setTrayCollapsed] = useState(true);
   const [spreadsheetFocusMode, setSpreadsheetFocusMode] = useState(false);
   const [browserFullscreen, setBrowserFullscreen] = useState(false);
   const [seRankingType, setSeRankingType] = useState<SeRankingAnalysisType>("cms_migration");
   const [seRankingSummary, setSeRankingSummary] = useState<SeRankingSummaryResponse | null>(null);
+  const [seRankingSummaryDirty, setSeRankingSummaryDirty] = useState(true);
   const [seRankingLoading, setSeRankingLoading] = useState(false);
+  const [manualSeFirstMonth, setManualSeFirstMonth] = useState("");
+  const [manualSeSecondMonth, setManualSeSecondMonth] = useState("");
+  const [manualSePreview, setManualSePreview] = useState<SeRankingManualPreviewResponse | null>(null);
+  const [manualSeLoading, setManualSeLoading] = useState(false);
+  const [siteStatusSummary, setSiteStatusSummary] = useState<SiteStatusSummaryResponse | null>(null);
+  const [siteStatusLoading, setSiteStatusLoading] = useState(false);
+  const [screamingFrogCrawlMode, setScreamingFrogCrawlMode] = useState<ScreamingFrogCrawlMode>("bounded_audit");
+  const [screamingFrogSummary, setScreamingFrogSummary] = useState<ScreamingFrogSummaryResponse | null>(null);
+  const [screamingFrogLoading, setScreamingFrogLoading] = useState(false);
+  const [screamingFrogRunStatus, setScreamingFrogRunStatus] = useState<InlineRunStatus>(null);
+  const [screamingFrogRecentResults, setScreamingFrogRecentResults] = useState<ScreamingFrogRunResponse["results"]>([]);
+  const [screamingFrogJobBatch, setScreamingFrogJobBatch] = useState<ScreamingFrogJobBatch | null>(null);
 
   const deferredSearch = useDeferredValue(query.search);
   const deferredVerticalSearch = useDeferredValue(verticalSearch);
+  const debouncedQuery = useDebouncedValue(query, 180);
   const filteredVerticalOptions = (options?.verticals ?? []).filter((vertical) =>
     vertical.toLowerCase().includes(deferredVerticalSearch.trim().toLowerCase()),
   );
+  const shouldShowVerticalSearch = (options?.verticals?.length ?? 0) > FILTER_SEARCH_THRESHOLD;
   const traySet = useMemo(() => new Set(tray?.rootDomains ?? []), [tray]);
   const traySignature = useMemo(() => (tray?.rootDomains ?? []).join("|"), [tray]);
   const activePreset = presets.find((preset) => preset.id === currentPresetId) ?? null;
   const selectedLead = leads?.items.find((item) => item.root_domain === selectedLeadId) ?? null;
+  const backendPill = describeBackendState(backendState, backendHealth);
+  const leadStateMessage = describeLeadLoadState(leadTableState, error, Boolean(leads?.items.length));
   const hasTimelineSelection = query.timelinePlatforms.length > 0;
+  const hasVisibleSeRankingData = Boolean(
+    leads?.items.some(
+      (item) =>
+        Boolean(item.se_ranking_status) ||
+        Boolean(item.se_ranking_checked_at) ||
+        Boolean(item.se_ranking_market),
+    ),
+  );
+  const hasVisibleSiteStatusData = Boolean(
+    leads?.items.some((item) => Boolean(item.site_status_category) || Boolean(item.site_status_checked_at)),
+  );
+  const hasVisibleScreamingFrogData = Boolean(
+    leads?.items.some((item) => Boolean(item.screamingfrog_status) || Boolean(item.screamingfrog_checked_at)),
+  );
   const hasCmsTiming = Boolean(query.cmsMigrationFrom || query.cmsMigrationTo);
   const hasDomainTiming = Boolean(query.domainMigrationFrom || query.domainMigrationTo);
+  const hasManualSeMonths = Boolean(manualSeFirstMonth && manualSeSecondMonth && manualSeFirstMonth !== manualSeSecondMonth);
   const migrationTimingLogicLabel = query.migrationTimingOperator === "or" ? "Match either window" : "Match both windows";
   const effectiveSidebarCollapsed = spreadsheetFocusMode || sidebarCollapsed;
   const effectiveTrayCollapsed = spreadsheetFocusMode || trayCollapsed;
@@ -714,13 +1308,53 @@ export default function App() {
     .filter(Boolean)
     .join(" ");
   const effectiveVisibleColumns = useMemo<ColumnKey[]>(() => {
-    const normalizedVisibleColumns = ensureColumns(visibleColumns);
-    if (!hasTimelineSelection) {
-      return normalizedVisibleColumns;
+    let normalizedVisibleColumns = ensureColumns(visibleColumns);
+    if (hasTimelineSelection) {
+      const requiredTimeline: ColumnKey[] = ["matched_timeline_platforms", "matched_first_detected", "matched_last_found"];
+      normalizedVisibleColumns = [
+        ...normalizedVisibleColumns,
+        ...requiredTimeline.filter((column) => !normalizedVisibleColumns.includes(column)),
+      ];
     }
-    const required: ColumnKey[] = ["matched_timeline_platforms", "matched_first_detected", "matched_last_found"];
-    return [...normalizedVisibleColumns, ...required.filter((column) => !normalizedVisibleColumns.includes(column))];
-  }, [hasTimelineSelection, visibleColumns]);
+    if (hasVisibleSeRankingData) {
+      const requiredSeRanking: ColumnKey[] = ["se_market", "se_traffic_change", "se_keyword_change", "se_outcome", "se_checked"];
+      normalizedVisibleColumns = [
+        ...normalizedVisibleColumns,
+        ...requiredSeRanking.filter((column) => !normalizedVisibleColumns.includes(column)),
+      ];
+    }
+    if (hasVisibleSiteStatusData) {
+      const requiredSiteStatus: ColumnKey[] = ["site_status", "site_status_code", "site_checked"];
+      normalizedVisibleColumns = [
+        ...normalizedVisibleColumns,
+        ...requiredSiteStatus.filter((column) => !normalizedVisibleColumns.includes(column)),
+      ];
+    }
+    if (hasVisibleScreamingFrogData) {
+      const requiredScreamingFrog: ColumnKey[] = [
+        "sf_status",
+        "sf_config",
+        "sf_quality",
+        "sf_score",
+        "sf_primary_issue",
+        "sf_issue_signals",
+        "sf_strengths",
+        "sf_evidence",
+        "sf_heading_health",
+        "sf_collection_title_signal",
+        "sf_collection_intro",
+        "sf_collection_snippet",
+        "sf_homepage_status",
+        "sf_internal_errors",
+        "sf_checked",
+      ];
+      normalizedVisibleColumns = [
+        ...normalizedVisibleColumns,
+        ...requiredScreamingFrog.filter((column) => !normalizedVisibleColumns.includes(column)),
+      ];
+    }
+    return normalizedVisibleColumns;
+  }, [hasTimelineSelection, hasVisibleSeRankingData, hasVisibleSiteStatusData, hasVisibleScreamingFrogData, visibleColumns]);
   const groupedPresets = useMemo(() => {
     const groups = new Map<string, Preset[]>();
     presets.forEach((preset) => {
@@ -730,7 +1364,14 @@ export default function App() {
     });
     return Array.from(groups.entries());
   }, [presets]);
-
+  const leadsRequestQuery = useMemo(
+    () => normalizeLeadQuery({ ...debouncedQuery, search: deferredSearch }),
+    [debouncedQuery, deferredSearch],
+  );
+  const scopedRequestQuery = useMemo(
+    () => normalizeLeadQuery({ ...debouncedQuery, search: deferredSearch, page: 1 }),
+    [debouncedQuery, deferredSearch],
+  );
   useEffect(() => {
     if (!toast) {
       return undefined;
@@ -744,6 +1385,21 @@ export default function App() {
   }, [query.search]);
 
   useEffect(() => {
+    setExactDomainDraft(query.exactDomain);
+  }, [query.exactDomain]);
+
+  useEffect(() => {
+    const normalizedDraft = exactDomainDraft.trim().toLowerCase();
+    if (normalizedDraft === query.exactDomain) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      updateQuery({ exactDomain: normalizedDraft });
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [exactDomainDraft, query.exactDomain]);
+
+  useEffect(() => {
     const syncFullscreen = () => {
       setBrowserFullscreen(Boolean(document.fullscreenElement));
     };
@@ -753,40 +1409,119 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.title = "DOMAIN DEALER";
+    document.title = "Lead Console";
   }, []);
 
   useEffect(() => {
+    setSeRankingSummaryDirty(true);
+    setSeRankingSummary(null);
+  }, [seRankingType, query]);
+
+  useEffect(() => {
     let cancelled = false;
-    async function loadSeRankingSummary() {
+    async function loadSiteStatusSummary() {
       if (!tray?.count) {
-        setSeRankingSummary(null);
-        setSeRankingLoading(false);
+        setSiteStatusSummary(null);
+        setSiteStatusLoading(false);
         return;
       }
-      setSeRankingLoading(true);
+      setSiteStatusLoading(true);
       try {
-        const response = await fetchSeRankingSummary(seRankingType);
+        const response = await fetchSiteStatusSummary();
         if (!cancelled) {
-          setSeRankingSummary(response);
+          setSiteStatusSummary(response);
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load SE Ranking summary");
+          setError(loadError instanceof Error ? loadError.message : "Failed to load site status summary");
         }
       } finally {
         if (!cancelled) {
-          setSeRankingLoading(false);
+          setSiteStatusLoading(false);
         }
       }
     }
-    void loadSeRankingSummary();
+    void loadSiteStatusSummary();
     return () => {
       cancelled = true;
     };
-  }, [seRankingType, traySignature]);
+  }, [traySignature]);
 
-  function updateQuery(patch: Partial<LeadQuery>, keepPreset = false) {
+  useEffect(() => {
+    let cancelled = false;
+    async function loadScreamingFrogSummary() {
+      if (!tray?.count) {
+        setScreamingFrogSummary(null);
+        setScreamingFrogJobBatch(null);
+        setScreamingFrogLoading(false);
+        return;
+      }
+      setScreamingFrogLoading(true);
+      try {
+        const response = await fetchScreamingFrogSummary(screamingFrogCrawlMode);
+        if (!cancelled) {
+          setScreamingFrogSummary(response);
+          setScreamingFrogJobBatch(response.jobBatch ?? null);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load Screaming Frog summary");
+        }
+      } finally {
+        if (!cancelled) {
+          setScreamingFrogLoading(false);
+        }
+      }
+    }
+    void loadScreamingFrogSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [screamingFrogCrawlMode, traySignature]);
+
+  useEffect(() => {
+    if (!screamingFrogJobBatch?.batchId || !screamingFrogJobBatch.isActive) {
+      return undefined;
+    }
+    let cancelled = false;
+    const interval = window.setInterval(async () => {
+      try {
+        const batch = await fetchScreamingFrogJobStatus(screamingFrogJobBatch.batchId);
+        if (cancelled) {
+          return;
+        }
+        setScreamingFrogJobBatch(batch);
+        if (!batch.isActive) {
+          const completedErrors = (batch.counts.error ?? 0) + (batch.counts.partial ?? 0);
+          setScreamingFrogRunStatus({
+            tone: completedErrors ? "warning" : "positive",
+            label: completedErrors ? "Audit finished with issues" : "Audit complete",
+            message: `Success ${batch.counts.success ?? 0} · Partial ${batch.counts.partial ?? 0} · Error ${batch.counts.error ?? 0}`,
+          });
+          await reloadWorksheet();
+          const refreshed = await fetchScreamingFrogSummary(screamingFrogCrawlMode);
+          if (!cancelled) {
+            setScreamingFrogSummary(refreshed);
+            setScreamingFrogJobBatch(refreshed.jobBatch ?? batch);
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load Screaming Frog job status");
+        }
+      }
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [screamingFrogJobBatch?.batchId, screamingFrogJobBatch?.isActive, screamingFrogCrawlMode]);
+
+  useEffect(() => {
+    setManualSePreview(null);
+  }, [manualSeFirstMonth, manualSeSecondMonth, traySignature]);
+
+  const updateQuery = useCallback((patch: Partial<LeadQuery>, keepPreset = false) => {
     startTransition(() => {
       setQuery((current) => {
         const nextSearch = patch.search ?? current.search;
@@ -797,9 +1532,9 @@ export default function App() {
         setCurrentPresetId(null);
       }
     });
-  }
+  }, []);
 
-  const activeFilterChips = [
+  const activeFilterChips = useMemo(() => [
     ...(query.search ? [{ group: "Search", label: query.search, clear: () => updateQuery({ search: "" }) }] : []),
     ...(query.exactDomain
       ? [{ group: "Exact domain", label: query.exactDomain, clear: () => updateQuery({ exactDomain: "", search: "" }) }]
@@ -850,6 +1585,48 @@ export default function App() {
       label: humanizeToken(value),
       clear: () => updateQuery({ cmsMigrationStatuses: query.cmsMigrationStatuses.filter((item) => item !== value) }),
     })),
+    ...query.marketingPlatforms.map((value) => ({
+      group: "Marketing",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ marketingPlatforms: query.marketingPlatforms.filter((item) => item !== value) }),
+    })),
+    ...query.crmPlatforms.map((value) => ({
+      group: "CRM",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ crmPlatforms: query.crmPlatforms.filter((item) => item !== value) }),
+    })),
+    ...query.paymentPlatforms.map((value) => ({
+      group: "Payments",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ paymentPlatforms: query.paymentPlatforms.filter((item) => item !== value) }),
+    })),
+    ...query.hostingProviders.map((value) => ({
+      group: "Hosting",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ hostingProviders: query.hostingProviders.filter((item) => item !== value) }),
+    })),
+    ...query.agencies.map((value) => ({
+      group: "Agency",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ agencies: query.agencies.filter((item) => item !== value) }),
+    })),
+    ...query.aiTools.map((value) => ({
+      group: "AI",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ aiTools: query.aiTools.filter((item) => item !== value) }),
+    })),
+    ...query.complianceFlags.map((value) => ({
+      group: "Compliance",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ complianceFlags: query.complianceFlags.filter((item) => item !== value) }),
+    })),
+    ...(query.minSocial ? [{ group: "Followers", label: `Min ${formatNumber(query.minSocial)}`, clear: () => updateQuery({ minSocial: "" }) }] : []),
+    ...(query.minRevenue ? [{ group: "Revenue", label: `Min ${formatNumber(query.minRevenue)}`, clear: () => updateQuery({ minRevenue: "" }) }] : []),
+    ...(query.minEmployees ? [{ group: "Employees", label: `Min ${formatNumber(query.minEmployees)}`, clear: () => updateQuery({ minEmployees: "" }) }] : []),
+    ...(query.minSku ? [{ group: "SKU", label: `Min ${formatNumber(query.minSku)}`, clear: () => updateQuery({ minSku: "" }) }] : []),
+    ...(query.minTechnologySpend
+      ? [{ group: "Tech spend", label: `Min ${formatNumber(query.minTechnologySpend)}`, clear: () => updateQuery({ minTechnologySpend: "" }) }]
+      : []),
     ...(query.hasSeRankingAnalysis
       ? [{ group: "SE Ranking", label: "Analyzed only", clear: () => updateQuery({ hasSeRankingAnalysis: false }) }]
       : []),
@@ -863,6 +1640,51 @@ export default function App() {
       label: humanizeToken(value),
       clear: () => updateQuery({ seRankingOutcomeFlags: query.seRankingOutcomeFlags.filter((item) => item !== value) }),
     })),
+    ...(query.hasSiteStatusCheck
+      ? [{ group: "Site status", label: "Checked only", clear: () => updateQuery({ hasSiteStatusCheck: false }) }]
+      : []),
+    ...query.siteStatusCategories.map((value) => ({
+      group: "Site status",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ siteStatusCategories: query.siteStatusCategories.filter((item) => item !== value) }),
+    })),
+    ...(query.hasScreamingFrogAudit
+      ? [{ group: "Screaming Frog", label: "Audited only", clear: () => updateQuery({ hasScreamingFrogAudit: false }) }]
+      : []),
+    ...query.screamingFrogStatuses.map((value) => ({
+      group: "Screaming Frog",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ screamingFrogStatuses: query.screamingFrogStatuses.filter((item) => item !== value) }),
+    })),
+    ...query.screamingFrogHomepageStatuses.map((value) => ({
+      group: "SF homepage",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ screamingFrogHomepageStatuses: query.screamingFrogHomepageStatuses.filter((item) => item !== value) }),
+    })),
+    ...query.screamingFrogTitleFlags.map((value) => ({
+      group: "SF titles",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ screamingFrogTitleFlags: query.screamingFrogTitleFlags.filter((item) => item !== value) }),
+    })),
+    ...query.screamingFrogMetaFlags.map((value) => ({
+      group: "SF meta",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ screamingFrogMetaFlags: query.screamingFrogMetaFlags.filter((item) => item !== value) }),
+    })),
+    ...query.screamingFrogCanonicalFlags.map((value) => ({
+      group: "SF canonicals",
+      label: humanizeToken(value),
+      clear: () => updateQuery({ screamingFrogCanonicalFlags: query.screamingFrogCanonicalFlags.filter((item) => item !== value) }),
+    })),
+    ...(query.hasScreamingFrogInternalErrors
+      ? [{ group: "Screaming Frog", label: "Internal errors", clear: () => updateQuery({ hasScreamingFrogInternalErrors: false }) }]
+      : []),
+    ...(query.hasScreamingFrogLocationPages
+      ? [{ group: "Screaming Frog", label: "Location pages", clear: () => updateQuery({ hasScreamingFrogLocationPages: false }) }]
+      : []),
+    ...(query.hasScreamingFrogServicePages
+      ? [{ group: "Screaming Frog", label: "Service pages", clear: () => updateQuery({ hasScreamingFrogServicePages: false }) }]
+      : []),
     ...query.timelinePlatforms.map((value) => ({
       group: "Timeline CMS",
       label: humanizeToken(value),
@@ -876,22 +1698,25 @@ export default function App() {
         }))
       : []),
     ...(hasTimelineSelection && query.timelineDateField !== "first_seen"
-      ? [{ group: "Tech timing", label: "Last seen", clear: () => updateQuery({ timelineDateField: "first_seen" }) }]
+      ? [{ group: "Platform signals", label: "Last seen", clear: () => updateQuery({ timelineDateField: "first_seen" }) }]
       : []),
     ...(hasTimelineSelection && query.timelineSeenFrom
-      ? [{ group: "Tech timing", label: `From ${query.timelineSeenFrom}`, clear: () => updateQuery({ timelineSeenFrom: "" }) }]
+      ? [{ group: "Platform signals", label: `From ${query.timelineSeenFrom}`, clear: () => updateQuery({ timelineSeenFrom: "" }) }]
       : []),
     ...(hasTimelineSelection && query.timelineSeenTo
-      ? [{ group: "Tech timing", label: `To ${query.timelineSeenTo}`, clear: () => updateQuery({ timelineSeenTo: "" }) }]
+      ? [{ group: "Platform signals", label: `To ${query.timelineSeenTo}`, clear: () => updateQuery({ timelineSeenTo: "" }) }]
       : []),
     ...(hasTimelineSelection && query.timelineGranularity !== "month"
-      ? [{ group: "Timeline", label: humanizeToken(query.timelineGranularity), clear: () => updateQuery({ timelineGranularity: "month" }) }]
+      ? [{ group: "Platform signals", label: humanizeToken(query.timelineGranularity), clear: () => updateQuery({ timelineGranularity: "month" }) }]
       : []),
     ...(query.cmsMigrationFrom
       ? [{ group: "CMS migration", label: `From ${query.cmsMigrationFrom}`, clear: () => updateQuery({ cmsMigrationFrom: "" }) }]
       : []),
     ...(query.cmsMigrationTo
       ? [{ group: "CMS migration", label: `To ${query.cmsMigrationTo}`, clear: () => updateQuery({ cmsMigrationTo: "" }) }]
+      : []),
+    ...(query.cmsUnchangedYears
+      ? [{ group: "CMS unchanged", label: `${query.cmsUnchangedYears}+ years`, clear: () => updateQuery({ cmsUnchangedYears: "" }) }]
       : []),
     ...(query.domainMigrationFrom
       ? [{ group: "Domain migration", label: `From ${query.domainMigrationFrom}`, clear: () => updateQuery({ domainMigrationFrom: "" }) }]
@@ -933,6 +1758,9 @@ export default function App() {
     ...(query.migrationOnly
       ? [{ group: "Flag", label: "Migration only", clear: () => updateQuery({ migrationOnly: false }) }]
       : []),
+    ...(query.liveSitesOnly
+      ? [{ group: "Flag", label: "Live sites only", clear: () => updateQuery({ liveSitesOnly: false }) }]
+      : []),
     ...(query.hasDomainMigration
       ? [{ group: "Flag", label: "Has previous domain", clear: () => updateQuery({ hasDomainMigration: false }) }]
       : []),
@@ -950,24 +1778,29 @@ export default function App() {
     ...(query.selectedOnly
       ? [{ group: "Flag", label: "Selected only", clear: () => updateQuery({ selectedOnly: false }) }]
       : []),
-  ];
+  ], [hasCmsTiming, hasDomainTiming, hasTimelineSelection, migrationTimingLogicLabel, options, query, updateQuery]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadBoot() {
       try {
-        const [summaryResponse, presetsResponse, trayResponse] = await Promise.all([fetchSummary(), fetchPresets(), fetchExportTray()]);
+        const [healthResponse, summaryResponse, presetsResponse, trayResponse] = await Promise.all([
+          fetchHealth(),
+          fetchSummary(),
+          fetchPresets(),
+          fetchExportTray(),
+        ]);
         if (!cancelled) {
+          setBackendHealth(healthResponse);
+          setBackendState(healthResponse.status === "ok" ? "connected" : "degraded");
           setSummary(summaryResponse);
           setPresets(presetsResponse.items);
           setTray(trayResponse);
-        }
-        const optionsResponse = await fetchFilterOptions();
-        if (!cancelled) {
-          setOptions(optionsResponse);
+          setError("");
         }
       } catch (loadError) {
         if (!cancelled) {
+          setBackendState("offline");
           setError(loadError instanceof Error ? loadError.message : "Failed to load app");
         }
       }
@@ -980,16 +1813,67 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+
+    async function refreshHealth() {
+      try {
+        const response = await fetchHealth();
+        if (cancelled) {
+          return;
+        }
+        setBackendHealth(response);
+        setBackendState(response.status === "ok" ? "connected" : "degraded");
+      } catch {
+        if (!cancelled) {
+          setBackendState("offline");
+        }
+      }
+    }
+
+    void refreshHealth();
+    const intervalId = window.setInterval(() => {
+      void refreshHealth();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFilterOptions() {
+      try {
+        const optionsResponse = await fetchFilterOptions(scopedRequestQuery);
+        if (!cancelled) {
+          setOptions(optionsResponse);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Failed to load filter options");
+        }
+      }
+    }
+    void loadFilterOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [scopedRequestQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    setError("");
+    setLeadTableState(leads?.items.length ? "retrying" : "loading");
     async function loadLeadsOnly() {
       try {
-        const effectiveQuery = normalizeLeadQuery({ ...query, search: deferredSearch });
-        const leadResponse = await fetchLeads(effectiveQuery);
+        const leadResponse = await fetchLeads(leadsRequestQuery);
         if (cancelled) {
           return;
         }
         setLeads(leadResponse);
+        setLeadTableState(leadResponse.items.length ? "ready" : "empty");
+        setBackendState("connected");
+        setError("");
 
         if (drawerPending) {
           const candidate = drawerPending === "first" ? leadResponse.items[0] : leadResponse.items.at(-1);
@@ -1007,7 +1891,16 @@ export default function App() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load leads");
+          const message = loadError instanceof Error ? loadError.message : "Failed to load leads";
+          const normalized = message.toLowerCase();
+          const retryable = normalized.includes("timed out") || normalized.includes("503") || normalized.includes("500");
+          setBackendState(retryable ? "degraded" : "offline");
+          setLeadTableState(leads?.items.length ? "retrying" : "error");
+          setError(
+            retryable
+              ? "Database busy or backend reconnecting. Retrying the worksheet while keeping the last successful results."
+              : message,
+          );
         }
       } finally {
         if (!cancelled) {
@@ -1019,120 +1912,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [
-    deferredSearch,
-    query.exactDomain,
-    query.countries,
-    query.tiers,
-    query.currentPlatforms,
-    query.recentPlatforms,
-    query.removedPlatforms,
-    query.hasDomainMigration,
-    query.hasCmsMigration,
-    query.domainMigrationStatuses,
-    query.domainConfidenceBands,
-    query.domainFingerprintStrengths,
-    query.domainTldRelationships,
-    query.cmsMigrationStatuses,
-    query.cmsConfidenceLevels,
-    query.verticals,
-    query.salesBuckets,
-    query.timelinePlatforms,
-    query.timelineEventTypes,
-    query.timelineDateField,
-    query.timelineSeenFrom,
-    query.timelineSeenTo,
-    query.cmsMigrationFrom,
-    query.cmsMigrationTo,
-    query.domainMigrationFrom,
-    query.domainMigrationTo,
-    query.migrationTimingOperator,
-    query.timelineGranularity,
-    query.migrationOnly,
-    query.hasContact,
-    query.hasMarketing,
-    query.hasCrm,
-    query.hasPayments,
-    query.hasSeRankingAnalysis,
-    query.seRankingAnalysisTypes,
-    query.seRankingOutcomeFlags,
-    query.selectedOnly,
-    query.page,
-    query.pageSize,
-    query.sortBy,
-    query.sortDirection,
-    drawerPending,
-  ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setAnalyticsLoading(true);
-    setTimelineLoading(true);
-    async function loadSupportingPanels() {
-      try {
-        const effectiveQuery = normalizeLeadQuery({ ...query, search: deferredSearch });
-        const [analyticsResponse, timelineResponse] = await Promise.all([
-          fetchAnalytics({ ...effectiveQuery, page: 1 }),
-          fetchTimelineCohort({ ...effectiveQuery, page: 1 }),
-        ]);
-        if (!cancelled) {
-          setAnalytics(analyticsResponse);
-          setTimeline(timelineResponse);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load analytics");
-        }
-      } finally {
-        if (!cancelled) {
-          setAnalyticsLoading(false);
-          setTimelineLoading(false);
-        }
-      }
-    }
-    void loadSupportingPanels();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    deferredSearch,
-    query.exactDomain,
-    query.countries,
-    query.tiers,
-    query.currentPlatforms,
-    query.recentPlatforms,
-    query.removedPlatforms,
-    query.hasDomainMigration,
-    query.hasCmsMigration,
-    query.domainMigrationStatuses,
-    query.domainConfidenceBands,
-    query.domainFingerprintStrengths,
-    query.domainTldRelationships,
-    query.cmsMigrationStatuses,
-    query.cmsConfidenceLevels,
-    query.verticals,
-    query.salesBuckets,
-    query.timelinePlatforms,
-    query.timelineEventTypes,
-    query.timelineDateField,
-    query.timelineSeenFrom,
-    query.timelineSeenTo,
-    query.cmsMigrationFrom,
-    query.cmsMigrationTo,
-    query.domainMigrationFrom,
-    query.domainMigrationTo,
-    query.migrationTimingOperator,
-    query.timelineGranularity,
-    query.migrationOnly,
-    query.hasContact,
-    query.hasMarketing,
-    query.hasCrm,
-    query.hasPayments,
-    query.hasSeRankingAnalysis,
-    query.seRankingAnalysisTypes,
-    query.seRankingOutcomeFlags,
-    query.selectedOnly,
-  ]);
+  }, [leadsRequestQuery, drawerPending]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1192,30 +1972,6 @@ export default function App() {
   async function handleSavePreset() {
     setPresetNameDraft(activePreset?.isBuiltin ? "" : activePreset?.name ?? "");
     setPresetModal({ mode: "save" });
-  }
-
-  async function handleUpdatePreset() {
-    if (!activePreset || activePreset.isBuiltin) {
-      return;
-    }
-    try {
-      await updatePreset(activePreset.id, {
-        name: activePreset.name,
-        filters: normalizeLeadQuery({ ...query, page: 1 }),
-        visibleColumns,
-        sort: { sortBy: query.sortBy, sortDirection: query.sortDirection },
-      });
-      await refreshPresets();
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "Failed to update preset");
-    }
-  }
-
-  async function handleDeletePreset() {
-    if (!activePreset || activePreset.isBuiltin) {
-      return;
-    }
-    setPresetModal({ mode: "delete" });
   }
 
   async function confirmSavePreset() {
@@ -1290,9 +2046,38 @@ export default function App() {
     }
   }
 
+  async function selectAllFilteredLeads() {
+    setSelectionLoading(true);
+    try {
+      const response = await addFilteredToExportTray({ ...query, page: 1 });
+      setTray(response);
+      const matchedCount = response.matchedCount ?? response.count;
+      const addedCount = response.addedCount ?? 0;
+      setToast(addedCount > 0 ? `Added ${addedCount} of ${matchedCount} filtered leads to the tray` : `All ${matchedCount} filtered leads were already in the tray`);
+    } catch (trayError) {
+      setError(trayError instanceof Error ? trayError.message : "Failed to select filtered leads");
+    } finally {
+      setSelectionLoading(false);
+    }
+  }
+
   async function clearTraySelection() {
     try {
       setTray(await clearExportTray());
+      setManualSePreview(null);
+      setSeRankingSummary(null);
+      setSiteStatusSummary(null);
+      setScreamingFrogSummary(null);
+      setScreamingFrogJobBatch(null);
+      setScreamingFrogRecentResults([]);
+      setManualSeFirstMonth("");
+      setManualSeSecondMonth("");
+      setSelectedLeadId(null);
+      setDetail(null);
+      if (query.selectedOnly) {
+        updateQuery({ selectedOnly: false }, true);
+      }
+      setToast("Cleared all selected leads");
     } catch (trayError) {
       setError(trayError instanceof Error ? trayError.message : "Failed to clear tray");
     }
@@ -1308,6 +2093,10 @@ export default function App() {
   function setSort(sortBy: string) {
     const nextDirection = query.sortBy === sortBy && query.sortDirection === "desc" ? "asc" : "desc";
     updateQuery({ sortBy, sortDirection: nextDirection, page: 1 });
+  }
+
+  function setExplicitSort(sortBy: string, sortDirection: "asc" | "desc") {
+    updateQuery({ sortBy, sortDirection, page: 1 });
   }
 
   function navigateDrawer(direction: "next" | "prev") {
@@ -1349,6 +2138,13 @@ export default function App() {
     }
   }
 
+  function openScreamingFrogAudit(rootDomain: string) {
+    if (!rootDomain) {
+      return;
+    }
+    window.open(screamingFrogAuditViewerUrl(rootDomain), "_blank", "noopener,noreferrer");
+  }
+
   function exportSingleLead(detailResponse: LeadDetailResponse) {
     const values = {
       root_domain: detailResponse.exportReady.root_domain,
@@ -1357,7 +2153,10 @@ export default function App() {
       best_old_domain: detailResponse.lead.best_old_domain,
       domain_migration_confidence: detailResponse.lead.domain_migration_confidence_band,
       cms_migration: detailResponse.lead.cms_migration_summary,
+      se_analysis_mode: detailResponse.lead.se_ranking_analysis_mode,
       se_market: detailResponse.lead.se_ranking_market,
+      se_first_month: detailResponse.lead.se_ranking_date_label_first || detailResponse.lead.se_ranking_first_month,
+      se_second_month: detailResponse.lead.se_ranking_date_label_second || detailResponse.lead.se_ranking_second_month,
       se_traffic_before: detailResponse.lead.se_ranking_traffic_before,
       se_traffic_last_month: detailResponse.lead.se_ranking_traffic_last_month,
       se_traffic_delta_percent: detailResponse.lead.se_ranking_traffic_delta_percent,
@@ -1365,6 +2164,11 @@ export default function App() {
       se_keywords_last_month: detailResponse.lead.se_ranking_keywords_last_month,
       se_keywords_delta_percent: detailResponse.lead.se_ranking_keywords_delta_percent,
       se_outcome_flags: detailResponse.lead.se_ranking_outcome_flags.join(" | "),
+      site_status: detailResponse.lead.site_status_category,
+      site_status_code: detailResponse.lead.site_status_code,
+      site_final_url: detailResponse.lead.site_status_final_url,
+      site_checked_at: detailResponse.lead.site_status_checked_at,
+      site_status_error: detailResponse.lead.site_status_error,
       emails: detailResponse.exportReady.emails.join(" | "),
       telephones: detailResponse.exportReady.telephones.join(" | "),
       people: detailResponse.exportReady.people.join(" | "),
@@ -1381,25 +2185,6 @@ export default function App() {
     anchor.download = `${detailResponse.exportReady.root_domain}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
-  }
-
-  function handleTimelineQuickRange(range: 3 | 6 | 12 | 24 | "all") {
-    updateQuery(applyDateWindow("timelineSeenFrom", "timelineSeenTo", range));
-  }
-
-  function handleCmsMigrationQuickRange(range: 3 | 6 | 12 | 24 | "all") {
-    updateQuery(applyDateWindow("cmsMigrationFrom", "cmsMigrationTo", range));
-  }
-
-  function handleDomainMigrationQuickRange(range: 3 | 6 | 12 | 24 | "all") {
-    updateQuery(applyDateWindow("domainMigrationFrom", "domainMigrationTo", range));
-  }
-
-  function toggleTimelineEventType(eventType: TimelineEventType) {
-    const next = query.timelineEventTypes.includes(eventType)
-      ? query.timelineEventTypes.filter((value) => value !== eventType)
-      : [...query.timelineEventTypes, eventType];
-    updateQuery({ timelineEventTypes: next as TimelineEventType[] });
   }
 
   function applySearchDraft() {
@@ -1445,6 +2230,10 @@ export default function App() {
     updateQuery({ cmsMigrationFrom: "", cmsMigrationTo: "" });
   }
 
+  function clearCmsUnchangedYears() {
+    updateQuery({ cmsUnchangedYears: "" });
+  }
+
   function clearDomainMigrationTiming() {
     updateQuery({ domainMigrationFrom: "", domainMigrationTo: "" });
   }
@@ -1453,16 +2242,30 @@ export default function App() {
     updateQuery({
       cmsMigrationFrom: "",
       cmsMigrationTo: "",
+      cmsUnchangedYears: "",
       domainMigrationFrom: "",
       domainMigrationTo: "",
       migrationTimingOperator: "and",
     });
   }
 
+  function applyMigrationPreset(target: "cms" | "domain", months: number) {
+    const window = migrationPresetWindow(months);
+    if (target === "cms") {
+      updateQuery({ cmsMigrationFrom: window.from, cmsMigrationTo: window.to });
+      return;
+    }
+    updateQuery({ domainMigrationFrom: window.from, domainMigrationTo: window.to });
+  }
+
   async function reloadWorksheet() {
     await refreshTray();
-    const summary = await fetchSeRankingSummary(seRankingType);
+    const [summary, siteSummary] = await Promise.all([
+      fetchSeRankingSummary(seRankingType, query, true),
+      fetchSiteStatusSummary(),
+    ]);
     setSeRankingSummary(summary);
+    setSiteStatusSummary(siteSummary);
     setQuery((current) => normalizeLeadQuery({ ...current }));
     if (selectedLeadId) {
       setDetail(await fetchLeadDetail(selectedLeadId));
@@ -1472,8 +2275,9 @@ export default function App() {
   async function handleRunSeRankingAnalysis(confirm = false) {
     try {
       setSeRankingLoading(true);
-      const response = await runSeRankingAnalysis(seRankingType, confirm);
+      const response = await runSeRankingAnalysis(seRankingType, confirm, query, true);
       setSeRankingSummary({ analysisType: response.analysisType, summary: response.summary });
+      setSeRankingSummaryDirty(false);
       if (confirm) {
         await reloadWorksheet();
         setVisibleColumns((current) =>
@@ -1498,8 +2302,9 @@ export default function App() {
   async function handleRefreshSeRankingAnalysis() {
     try {
       setSeRankingLoading(true);
-      const response = await refreshSeRankingAnalysis(seRankingType);
+      const response = await refreshSeRankingAnalysis(seRankingType, query, true);
       setSeRankingSummary({ analysisType: response.analysisType, summary: response.summary });
+      setSeRankingSummaryDirty(false);
       await reloadWorksheet();
       setToast(`SE Ranking refreshed ${response.results.length} domains`);
     } catch (refreshError) {
@@ -1509,19 +2314,232 @@ export default function App() {
     }
   }
 
-  const techTimingPresetValue = quickRangeSelection(query.timelineSeenFrom, query.timelineSeenTo);
-  const cmsTimingPresetValue = quickRangeSelection(query.cmsMigrationFrom, query.cmsMigrationTo);
-  const domainTimingPresetValue = quickRangeSelection(query.domainMigrationFrom, query.domainMigrationTo);
+  async function handlePreviewManualSeRankingAnalysis() {
+    try {
+      setManualSeLoading(true);
+      const response = await previewManualSeRankingAnalysis({
+        firstMonth: manualSeFirstMonth,
+        secondMonth: manualSeSecondMonth,
+        useSelectedTray: true,
+      });
+      setManualSePreview(response);
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Failed to preview manual SE Ranking analysis");
+    } finally {
+      setManualSeLoading(false);
+    }
+  }
+
+  async function handleRunManualSeRankingAnalysis() {
+    try {
+      setManualSeLoading(true);
+      const response = await runManualSeRankingAnalysis({
+        firstMonth: manualSeFirstMonth,
+        secondMonth: manualSeSecondMonth,
+        useSelectedTray: true,
+      });
+      setManualSePreview({
+        analysisType: response.analysisType,
+        analysisMode: response.analysisMode,
+        firstMonth: response.firstMonth,
+        secondMonth: response.secondMonth,
+        summary: response.summary,
+      });
+      await reloadWorksheet();
+      setVisibleColumns((current) =>
+        ensureColumns([
+          ...current,
+          "se_market",
+          "se_traffic_before",
+          "se_traffic_last_month",
+          "se_traffic_change",
+          "se_keyword_change",
+          "se_checked",
+        ]),
+      );
+      setToast(`SE Ranking analyzed ${response.results.length} domains`);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "Failed to run manual SE Ranking analysis");
+    } finally {
+      setManualSeLoading(false);
+    }
+  }
+
+  async function handleRunSiteStatusCheck(confirm = false) {
+    try {
+      setSiteStatusLoading(true);
+      const response = await runSiteStatusCheck(confirm);
+      setSiteStatusSummary(response);
+      if (confirm) {
+        await reloadWorksheet();
+        setVisibleColumns((current) => ensureColumns([...current, "site_status", "site_status_code", "site_checked"]));
+        setToast(`Checked ${response.results.length} domains`);
+      }
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "Failed to run site status checks");
+    } finally {
+      setSiteStatusLoading(false);
+    }
+  }
+
+  async function handleRefreshSiteStatusCheck() {
+    try {
+      setSiteStatusLoading(true);
+      const response = await refreshSiteStatusCheck();
+      setSiteStatusSummary(response);
+      await reloadWorksheet();
+      setToast(`Refreshed ${response.results.length} site checks`);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh site status checks");
+    } finally {
+      setSiteStatusLoading(false);
+    }
+  }
+
+  async function handleRunScreamingFrogAudit(confirm = false) {
+    try {
+      setScreamingFrogLoading(true);
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: confirm ? "Audit running" : "Preview loading",
+        message: confirm
+          ? "Screaming Frog has started locally on this Mac. Keep this page open while the crawl runs."
+          : "Checking the selected tray leads and preparing the local crawl plan.",
+      });
+      const response = await runScreamingFrogAudit(screamingFrogCrawlMode, confirm);
+      setScreamingFrogSummary(response);
+      setScreamingFrogJobBatch(response.jobBatch ?? null);
+      setScreamingFrogRecentResults(response.results);
+      if (confirm) {
+        setVisibleColumns((current) =>
+          ensureColumns([
+            ...current,
+            "sf_status",
+            "sf_config",
+            "sf_quality",
+            "sf_score",
+            "sf_primary_issue",
+            "sf_collection_title_signal",
+            "sf_collection_intro",
+            "sf_homepage_status",
+            "sf_internal_errors",
+            "sf_checked",
+          ]),
+        );
+        setScreamingFrogRunStatus({
+          tone: "warning",
+          label: "Audit queued",
+          message: response.jobBatch?.isActive
+            ? `Queued ${response.jobBatch.items.length} local crawl${response.jobBatch.items.length === 1 ? "" : "s"}. Results will update here while Screaming Frog runs.`
+            : `Saved ${response.results.length} local audits.`,
+        });
+        setToast(response.jobBatch?.isActive ? `Queued ${response.jobBatch.items.length} Screaming Frog audits` : `Screaming Frog audited ${response.results.length} domains`);
+      } else {
+        setScreamingFrogRunStatus({
+          tone: "neutral",
+          label: "Preview ready",
+          message: `${response.summary.toRunCount} selected leads are ready for a local Screaming Frog audit.`,
+        });
+      }
+    } catch (runError) {
+      const message = runError instanceof Error ? runError.message : "Failed to run Screaming Frog audit";
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: "Audit failed",
+        message,
+      });
+      setError(message);
+    } finally {
+      setScreamingFrogLoading(false);
+    }
+  }
+
+  async function handleRefreshScreamingFrogAudit() {
+    try {
+      setScreamingFrogLoading(true);
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: "Refresh running",
+        message: "Refreshing saved local Screaming Frog audits for the selected tray leads.",
+      });
+      const response = await refreshScreamingFrogAudit(screamingFrogCrawlMode);
+      setScreamingFrogSummary(response);
+      setScreamingFrogJobBatch(response.jobBatch ?? null);
+      setScreamingFrogRecentResults(response.results);
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: response.jobBatch?.isActive ? "Refresh queued" : "Refresh complete",
+        message: response.jobBatch?.isActive
+          ? `Queued ${response.jobBatch.items.length} audit refresh${response.jobBatch.items.length === 1 ? "" : "es"}. Updated results will appear here as they finish.`
+          : `Refreshed ${response.results.length} local audits.`,
+      });
+      setToast(response.jobBatch?.isActive ? `Queued ${response.jobBatch.items.length} Screaming Frog refreshes` : `Screaming Frog refreshed ${response.results.length} audits`);
+    } catch (refreshError) {
+      const message = refreshError instanceof Error ? refreshError.message : "Failed to refresh Screaming Frog audit";
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: "Refresh failed",
+        message,
+      });
+      setError(message);
+    } finally {
+      setScreamingFrogLoading(false);
+    }
+  }
+
+  async function handleStopScreamingFrogAudit() {
+    if (!screamingFrogJobBatch?.batchId) {
+      return;
+    }
+    try {
+      setScreamingFrogLoading(true);
+      const batch = await stopScreamingFrogJobBatch(screamingFrogJobBatch.batchId);
+      setScreamingFrogJobBatch(batch);
+      setScreamingFrogRunStatus({
+        tone: "warning",
+        label: "Crawl stopped",
+        message: "Queued jobs were cancelled and the current local Screaming Frog run was asked to stop.",
+      });
+      await reloadWorksheet();
+      const refreshed = await fetchScreamingFrogSummary(screamingFrogCrawlMode);
+      setScreamingFrogSummary(refreshed);
+      setScreamingFrogJobBatch(refreshed.jobBatch ?? batch);
+      setToast("Stopped Screaming Frog crawl batch");
+    } catch (stopError) {
+      setError(stopError instanceof Error ? stopError.message : "Failed to stop Screaming Frog crawl batch");
+    } finally {
+      setScreamingFrogLoading(false);
+    }
+  }
+
   const hasMigrationTiming = hasCmsTiming || hasDomainTiming;
-  const techTimingSummary = query.timelinePlatforms.length
-    ? `${query.timelineDateField === "last_seen" ? "Last seen" : "First seen"} · ${dateWindowLabel(query.timelineSeenFrom, query.timelineSeenTo)}`
-    : "No technology timing filter";
+  const hasCmsUnchangedYears = Boolean(query.cmsUnchangedYears);
   const cmsTimingSummary = hasCmsTiming
     ? dateWindowLabel(query.cmsMigrationFrom, query.cmsMigrationTo)
     : "All CMS migration dates";
+  const cmsUnchangedSummary = hasCmsUnchangedYears
+    ? `No CMS change in ${query.cmsUnchangedYears}+ years`
+    : "Find stale unchanged CMS";
   const domainTimingSummary = hasDomainTiming
     ? dateWindowLabel(query.domainMigrationFrom, query.domainMigrationTo)
     : "All domain migration dates";
+  const migrationCaptureLabel = hasMigrationTiming ? migrationTimingLogicLabel : "Capture all migrations";
+  const seEligibilityLabel = seRankingSummary
+    ? `${seRankingSummary.summary.eligibleCount} displayed leads can run SE checks`
+    : "Set your worksheet filters, then preview the displayed leads before running SE Ranking";
+  const siteStatusLabel = siteStatusSummary
+    ? `${siteStatusSummary.summary.toRunCount} selected leads still need a site check`
+    : "Select tray leads to preview bulk site status checks";
+  const screamingFrogLabel = screamingFrogSummary
+    ? `${screamingFrogSummary.summary.toRunCount} selected leads still need a Screaming Frog audit`
+    : "Select tray leads to preview local Screaming Frog audits";
+  const screamingFrogBreakdown = screamingFrogSummary?.summary.resolvedConfigBreakdown
+    ?.map((item) => `${item.label}: ${item.count}`)
+    .join(" · ");
+  const screamingFrogJobCounts = screamingFrogJobBatch?.counts ?? {};
+  const selectedCmsCoverageWarnings = (summary?.source_coverage ?? [])
+    .filter((item) => [...query.currentPlatforms, ...query.recentPlatforms, ...query.removedPlatforms].includes(item.platform) && !item.hasRemoved)
+    .map((item) => humanizeToken(item.platform));
   const searchSectionCount = Number(Boolean(query.search || query.exactDomain));
   const commonSectionCount =
     query.verticals.length +
@@ -1531,10 +2549,10 @@ export default function App() {
     query.currentPlatforms.length +
     query.removedPlatforms.length +
     query.recentPlatforms.length +
+    Number(query.liveSitesOnly) +
     Number(query.hasDomainMigration) +
     Number(query.hasCmsMigration) +
     Number(query.hasContact) +
-    Number(query.hasSeRankingAnalysis) +
     Number(query.selectedOnly);
   const migrationSectionCount =
     query.domainMigrationStatuses.length +
@@ -1542,24 +2560,48 @@ export default function App() {
     query.domainFingerprintStrengths.length +
     query.domainTldRelationships.length +
     query.cmsMigrationStatuses.length +
-    query.cmsConfidenceLevels.length +
+    query.cmsConfidenceLevels.length;
+  const analysisSectionCount =
+    Number(query.hasSeRankingAnalysis) +
     query.seRankingAnalysisTypes.length +
-    query.seRankingOutcomeFlags.length;
+    query.seRankingOutcomeFlags.length +
+    Number(query.hasSiteStatusCheck) +
+    query.siteStatusCategories.length +
+    Number(query.hasScreamingFrogAudit) +
+    query.screamingFrogStatuses.length +
+    query.screamingFrogHomepageStatuses.length +
+    query.screamingFrogTitleFlags.length +
+    query.screamingFrogMetaFlags.length +
+    query.screamingFrogCanonicalFlags.length +
+    Number(query.hasScreamingFrogInternalErrors) +
+    Number(query.hasScreamingFrogLocationPages) +
+    Number(query.hasScreamingFrogServicePages);
   const advancedSectionCount =
     Number(query.migrationOnly) +
     Number(query.hasMarketing) +
     Number(query.hasCrm) +
-    Number(query.hasPayments);
+    Number(query.hasPayments) +
+    query.marketingPlatforms.length +
+    query.crmPlatforms.length +
+    query.paymentPlatforms.length +
+    query.hostingProviders.length +
+    query.agencies.length +
+    query.aiTools.length +
+    query.complianceFlags.length +
+    Number(Boolean(query.minSocial)) +
+    Number(Boolean(query.minRevenue)) +
+    Number(Boolean(query.minEmployees)) +
+    Number(Boolean(query.minSku)) +
+    Number(Boolean(query.minTechnologySpend));
 
   return (
     <div className={appShellClassName}>
       <header className="topbar">
         <div className="topbar-brand-block">
           <div className="brand-lockup">
-            <div className="brand-mark">DD</div>
             <div className="brand-copy">
               <p className="kicker">Migration intelligence for outbound</p>
-              <h1>DOMAIN DEALER</h1>
+              <h1>Lead Console</h1>
               <p className="intro">
                 Cold-email list building across domains, platforms, and migration signals.
               </p>
@@ -1571,337 +2613,83 @@ export default function App() {
             <span className="shell-pill">
               {loading ? "Refreshing worksheet" : `${(leads?.total ?? 0).toLocaleString()} leads in view`}
             </span>
+            <span className={`shell-pill shell-pill-${backendPill.tone}`}>{backendPill.label}</span>
           </div>
         </div>
-        <div className="header-actions">
-          <a className="primary-button" href={exportLeadUrl(query)}>
-            Export filtered CSV
-          </a>
-          <button className="ghost-button" onClick={handleSavePreset} type="button">
-            Save preset
-          </button>
-          <div className="stamp-card">
-            <span>Processed</span>
-            <strong>{summary ? new Date(summary.processed_at).toLocaleString() : "Loading…"}</strong>
-            <small>{summary ? `${summary.overview.unique_leads.toLocaleString()} scoped leads` : ""}</small>
+        <div className="command-bar">
+          <div className="command-bar-main">
+            <label className="field compact-field command-search-field">
+              <span>Global search</span>
+              <div className="search-field-row">
+                <input
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      applySearchDraft();
+                    }
+                  }}
+                  placeholder="Search domain, company, tool, or vertical"
+                />
+                <button
+                  className="primary-button small-button"
+                  disabled={searchDraft.trim() === query.search.trim()}
+                  onClick={applySearchDraft}
+                  type="button"
+                >
+                  Search
+                </button>
+              </div>
+            </label>
+            <label className="field compact-field preset-select-field command-preset-field">
+              <span>Workspace view</span>
+              <select
+                value={currentPresetId ?? ""}
+                onChange={(event) => {
+                  const preset = presets.find((item) => item.id === event.target.value);
+                  if (preset) {
+                    applyPreset(preset);
+                  } else {
+                    setCurrentPresetId(null);
+                  }
+                }}
+              >
+                <option value="">Current custom view</option>
+                {groupedPresets.map(([group, items]) => (
+                  <optgroup label={group} key={group}>
+                    {items.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <div className="command-view-summary">
+              <strong>{activePreset?.name ?? "Current custom view"}</strong>
+              <span>{activePreset?.description ?? "Start broad, then refine from the rail and worksheet controls."}</span>
+            </div>
+          </div>
+          <div className="header-actions">
+            <a className="primary-button" href={exportLeadUrl(query)}>
+              Export filtered CSV
+            </a>
+            <button className="ghost-button" onClick={handleSavePreset} type="button">
+              Save preset
+            </button>
+            <button className="ghost-button" onClick={() => setShowGuideModal(true)} type="button">
+              Guide
+            </button>
+            <div className="stamp-card">
+              <span>Processed</span>
+              <strong>{summary ? new Date(summary.processed_at).toLocaleString() : "Loading…"}</strong>
+              <small>{summary ? `${summary.overview.unique_leads.toLocaleString()} scoped leads` : ""}</small>
+            </div>
           </div>
         </div>
       </header>
-
-      <section className="preset-strip">
-        <div className="preset-header compact-header">
-          <div>
-            <h2>Workspace views</h2>
-            <p>Switch your prospecting lens, then refine from the shell rail.</p>
-          </div>
-          <div className="preset-actions">
-            {activePreset && !activePreset.isBuiltin ? (
-              <>
-                <button className="ghost-button small-button" onClick={handleUpdatePreset} type="button">
-                  Update preset
-                </button>
-                <button className="ghost-button small-button" onClick={handleDeletePreset} type="button">
-                  Delete preset
-                </button>
-              </>
-            ) : null}
-          </div>
-        </div>
-        <div className="compact-toolbar-row">
-          <label className="field compact-field preset-select-field">
-            <span>Preset</span>
-            <select
-              value={currentPresetId ?? ""}
-              onChange={(event) => {
-                const preset = presets.find((item) => item.id === event.target.value);
-                if (preset) {
-                  applyPreset(preset);
-                } else {
-                  setCurrentPresetId(null);
-                }
-              }}
-            >
-              <option value="">Current custom view</option>
-              {groupedPresets.map(([group, items]) => (
-                <optgroup label={group} key={group}>
-                  {items.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-          <div className="compact-preset-summary">
-            <strong>{activePreset?.name ?? "Current custom view"}</strong>
-            <span>{activePreset?.description ?? "Discovery mode across the full DOMAIN DEALER workspace."}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="timeline-panel">
-        <div className="timeline-panel-header compact-header">
-          <div>
-            <h2>Technology timing</h2>
-            <p>Track platform recency, start signals, and migration windows without leaving the worksheet.</p>
-          </div>
-        </div>
-        <div className="compact-toolbar-row timeline-compact-row">
-          <label className="field compact-field timeline-range-field">
-            <span>Tech timing preset</span>
-            <select
-              value={techTimingPresetValue}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (value === "all") handleTimelineQuickRange("all");
-                else if (value === "3") handleTimelineQuickRange(3);
-                else if (value === "6") handleTimelineQuickRange(6);
-                else if (value === "12") handleTimelineQuickRange(12);
-                else if (value === "24") handleTimelineQuickRange(24);
-              }}
-            >
-              <option value="all">All time</option>
-              <option value="3">Past 3 months</option>
-              <option value="6">Past 6 months</option>
-              <option value="12">Past 12 months</option>
-              <option value="24">Past 24 months</option>
-              <option value="custom">Custom dates below</option>
-            </select>
-          </label>
-          <label className="field compact-field timeline-range-field">
-            <span>Granularity</span>
-            <select
-              value={query.timelineGranularity}
-              onChange={(event) => updateQuery({ timelineGranularity: event.target.value as TimelineGranularity })}
-            >
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
-              <option value="quarter">Quarterly</option>
-            </select>
-          </label>
-          <div className="compact-preset-summary">
-            <strong>{query.timelinePlatforms.length ? `${query.timelinePlatforms.length} platform${query.timelinePlatforms.length === 1 ? "" : "s"} selected` : "No technology timing filter"}</strong>
-            <span>{query.timelinePlatforms.length ? `${query.timelinePlatforms.map(humanizeToken).join(", ")} · ${techTimingSummary}` : "Choose one or more platforms to unlock the cohort chart and tech timing filters."}</span>
-          </div>
-        </div>
-        <details
-          className="timeline-details"
-          open={
-            hasTimelineSelection ||
-            Boolean(query.timelineSeenFrom || query.timelineSeenTo || query.cmsMigrationFrom || query.cmsMigrationTo || query.domainMigrationFrom || query.domainMigrationTo)
-          }
-        >
-          <summary>Timing filters</summary>
-          <div className="timeline-details-grid">
-            <section className="timeline-tech-picker compact-card">
-              <div className="filter-header">
-                <h3>Tech timing platforms</h3>
-                <span className="muted">{query.timelinePlatforms.length} selected</span>
-              </div>
-              <div className="checklist compact-checklist">
-                {(options?.timelinePlatforms ?? []).map((platform) => (
-                  <label key={platform}>
-                    <input
-                      checked={query.timelinePlatforms.includes(platform)}
-                      onChange={() => updateQuery({ timelinePlatforms: toggle(query.timelinePlatforms, platform) })}
-                      type="checkbox"
-                    />
-                    <span>{humanizeToken(platform)}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
-            <section className="timeline-control-stack compact-card">
-              <div className="filter-header">
-                <h3>Tech timing</h3>
-                <span className="muted">{techTimingSummary}</span>
-              </div>
-              <div className="timeline-date-row compact-date-row">
-                <label className="field compact-field">
-                  <span>Date basis</span>
-                  <select
-                    value={query.timelineDateField}
-                    onChange={(event) => updateQuery({ timelineDateField: event.target.value as TimelineDateField })}
-                  >
-                    <option value="first_seen">First seen</option>
-                    <option value="last_seen">Last seen</option>
-                  </select>
-                </label>
-                <label className="field compact-field">
-                  <span>Quick preset</span>
-                  <select
-                    value={techTimingPresetValue}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value === "all") handleTimelineQuickRange("all");
-                      else if (value === "3") handleTimelineQuickRange(3);
-                      else if (value === "6") handleTimelineQuickRange(6);
-                      else if (value === "12") handleTimelineQuickRange(12);
-                      else if (value === "24") handleTimelineQuickRange(24);
-                    }}
-                  >
-                    <option value="all">All time</option>
-                    <option value="3">Past 3 months</option>
-                    <option value="6">Past 6 months</option>
-                    <option value="12">Past 12 months</option>
-                    <option value="24">Past 24 months</option>
-                    <option value="custom">Custom dates below</option>
-                  </select>
-                </label>
-              </div>
-              <div className="timeline-event-group">
-                <span className="group-label">Signals</span>
-                <div className="checklist">
-                  {(Object.keys(TIMELINE_EVENT_LABELS) as TimelineEventType[]).map((eventType) => (
-                    <label key={eventType}>
-                      <input checked={query.timelineEventTypes.includes(eventType)} onChange={() => toggleTimelineEventType(eventType)} type="checkbox" />
-                      <span>{TIMELINE_EVENT_LABELS[eventType]}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="timeline-date-row compact-date-row">
-                <label className="field compact-field">
-                  <span>{query.timelineDateField === "last_seen" ? "Last seen from" : "First seen from"}</span>
-                  <input type="date" value={query.timelineSeenFrom} onChange={(event) => updateQuery({ timelineSeenFrom: event.target.value })} />
-                </label>
-                <label className="field compact-field">
-                  <span>{query.timelineDateField === "last_seen" ? "Last seen to" : "First seen to"}</span>
-                  <input type="date" value={query.timelineSeenTo} onChange={(event) => updateQuery({ timelineSeenTo: event.target.value })} />
-                </label>
-              </div>
-            </section>
-            <section className="timeline-control-stack compact-card">
-              <div className="filter-header">
-                <h3>Migration timing</h3>
-                <span className="muted">{hasMigrationTiming ? migrationTimingLogicLabel : "Separate CMS and domain windows"}</span>
-              </div>
-              <label className="field compact-field">
-                <span>Migration timing logic</span>
-                <select
-                  value={query.migrationTimingOperator}
-                  onChange={(event) => updateQuery({ migrationTimingOperator: event.target.value as MigrationTimingOperator })}
-                >
-                  <option value="and">Match both windows</option>
-                  <option value="or">Match either window</option>
-                </select>
-              </label>
-              <div className="migration-date-groups">
-                <div className="migration-date-group">
-                  <div className="filter-header">
-                    <h4>CMS migration</h4>
-                    <span className="muted">{cmsTimingSummary}</span>
-                  </div>
-                  <label className="field compact-field">
-                    <span>Quick preset</span>
-                    <select
-                      value={cmsTimingPresetValue}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value === "all") handleCmsMigrationQuickRange("all");
-                        else if (value === "3") handleCmsMigrationQuickRange(3);
-                        else if (value === "6") handleCmsMigrationQuickRange(6);
-                        else if (value === "12") handleCmsMigrationQuickRange(12);
-                        else if (value === "24") handleCmsMigrationQuickRange(24);
-                      }}
-                    >
-                      <option value="all">All time</option>
-                      <option value="3">Past 3 months</option>
-                      <option value="6">Past 6 months</option>
-                      <option value="12">Past 12 months</option>
-                      <option value="24">Past 24 months</option>
-                      <option value="custom">Custom dates below</option>
-                    </select>
-                  </label>
-                  <div className="timeline-date-row compact-date-row">
-                    <label className="field compact-field">
-                      <span>From</span>
-                      <input type="date" value={query.cmsMigrationFrom} onChange={(event) => updateQuery({ cmsMigrationFrom: event.target.value })} />
-                    </label>
-                    <label className="field compact-field">
-                      <span>To</span>
-                      <input type="date" value={query.cmsMigrationTo} onChange={(event) => updateQuery({ cmsMigrationTo: event.target.value })} />
-                    </label>
-                  </div>
-                </div>
-                <div className="migration-date-group">
-                  <div className="filter-header">
-                    <h4>Domain migration</h4>
-                    <span className="muted">{domainTimingSummary}</span>
-                  </div>
-                  <label className="field compact-field">
-                    <span>Quick preset</span>
-                    <select
-                      value={domainTimingPresetValue}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value === "all") handleDomainMigrationQuickRange("all");
-                        else if (value === "3") handleDomainMigrationQuickRange(3);
-                        else if (value === "6") handleDomainMigrationQuickRange(6);
-                        else if (value === "12") handleDomainMigrationQuickRange(12);
-                        else if (value === "24") handleDomainMigrationQuickRange(24);
-                      }}
-                    >
-                      <option value="all">All time</option>
-                      <option value="3">Past 3 months</option>
-                      <option value="6">Past 6 months</option>
-                      <option value="12">Past 12 months</option>
-                      <option value="24">Past 24 months</option>
-                      <option value="custom">Custom dates below</option>
-                    </select>
-                  </label>
-                  <div className="timeline-date-row compact-date-row">
-                    <label className="field compact-field">
-                      <span>From</span>
-                      <input type="date" value={query.domainMigrationFrom} onChange={(event) => updateQuery({ domainMigrationFrom: event.target.value })} />
-                    </label>
-                    <label className="field compact-field">
-                      <span>To</span>
-                      <input type="date" value={query.domainMigrationTo} onChange={(event) => updateQuery({ domainMigrationTo: event.target.value })} />
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </details>
-        {hasTimelineSelection ? (
-          <TimelineCardBody timeline={timeline} loading={timelineLoading} dateField={query.timelineDateField} />
-        ) : (
-          <div className="timeline-empty-state">
-            Pick one or more platforms to unlock the cohort chart and tech timing timeline.
-          </div>
-        )}
-      </section>
-
-      <section className={`analytics-ribbon ${analyticsExpanded ? "analytics-ribbon-open" : ""}`}>
-        <button className="analytics-summary-bar" onClick={() => setAnalyticsExpanded((current) => !current)} type="button">
-          <div className="analytics-summary-title">
-            <span className="kicker-inline">Dataset summary</span>
-            <strong>{analyticsExpanded ? "Hide analytics" : "Show analytics"}</strong>
-          </div>
-          <div className="analytics-summary-metrics">
-            <span><small>Filtered</small><strong>{analyticsLoading ? "…" : analytics?.kpis.filteredLeads ?? leads?.total ?? "…"}</strong></span>
-            <span><small>Selected</small><strong>{tray?.count ?? "…"}</strong></span>
-            <span><small>Priority A/B</small><strong>{analyticsLoading ? "…" : analytics?.kpis.priorityAB ?? "…"}</strong></span>
-            <span><small>Recent migrations</small><strong>{analyticsLoading ? "…" : analytics?.kpis.recentMigrations ?? "…"}</strong></span>
-          </div>
-          <span className="analytics-summary-toggle">{analyticsExpanded ? "−" : "+"}</span>
-        </button>
-        {analyticsExpanded ? (
-          <div className="analytics-ribbon-grid">
-            <MetricCard label="Filtered leads" value={analyticsLoading ? "…" : analytics?.kpis.filteredLeads ?? leads?.total ?? "…"} />
-            <MetricCard label="Selected leads" value={tray?.count ?? "…"} />
-            <MetricCard label="Priority A/B" value={analyticsLoading ? "…" : analytics?.kpis.priorityAB ?? "…"} />
-            <MetricCard label="Recent migrations" value={analyticsLoading ? "…" : analytics?.kpis.recentMigrations ?? "…"} />
-            <MixCard title="Country mix" mode="stacked" data={analyticsLoading ? [] : analytics?.countryMix ?? []} />
-            <MixCard title="Current platform mix" mode="bars" data={analyticsLoading ? [] : analytics?.currentPlatformMix ?? []} />
-            <MixCard title="Lead angle mix" mode="bars" data={analyticsLoading ? [] : analytics?.salesBucketMix ?? []} />
-            <MixCard title="Top migration corridors" mode="bars" data={analyticsLoading ? [] : analytics?.topCorridors ?? []} />
-          </div>
-        ) : null}
-      </section>
 
       <main className={`workspace ${effectiveSidebarCollapsed ? "workspace-sidebar-collapsed" : ""}`}>
         <aside className={`filter-rail ${effectiveSidebarCollapsed ? "rail-collapsed" : ""}`}>
@@ -1944,31 +2732,30 @@ export default function App() {
             <>
               <SidebarSection
                 title="Search"
+                description="Lock onto a specific domain or review the current search context."
                 activeCount={searchSectionCount}
                 open={sidebarSections.search}
                 onToggle={() => toggleSidebarSection("search")}
               >
                 <label className="field">
-                  <span>Search or exact domain</span>
+                  <span>Current global search</span>
+                  <input disabled value={query.search || "No global search applied"} />
+                </label>
+                <label className="field compact-field">
+                  <span>Exact domain override</span>
                   <div className="search-field-row">
                     <input
-                      value={searchDraft}
-                      onChange={(event) => setSearchDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          applySearchDraft();
-                        }
-                      }}
-                      placeholder="domain, company, tool, vertical"
+                      value={exactDomainDraft}
+                      onChange={(event) => setExactDomainDraft(event.target.value)}
+                      placeholder="example.com.au"
                     />
                     <button
                       className="ghost-button small-button"
-                      disabled={searchDraft.trim() === query.search.trim()}
-                      onClick={applySearchDraft}
+                      disabled={!query.search && !query.exactDomain}
+                      onClick={() => updateQuery({ search: "", exactDomain: "" })}
                       type="button"
                     >
-                      Search
+                      Clear
                     </button>
                   </div>
                 </label>
@@ -1976,6 +2763,7 @@ export default function App() {
 
               <SidebarSection
                 title="Commonly used"
+                description="Your main discovery filters for narrowing the lead universe quickly."
                 activeCount={commonSectionCount}
                 open={sidebarSections.common}
                 onToggle={() => toggleSidebarSection("common")}
@@ -1985,14 +2773,16 @@ export default function App() {
                     <h3>Verticals</h3>
                     <span className="muted">{query.verticals.length} selected</span>
                   </div>
-                  <label className="field compact-field">
-                    <span>Search verticals</span>
-                    <input
-                      value={verticalSearch}
-                      onChange={(event) => setVerticalSearch(event.target.value)}
-                      placeholder="fashion, industrial, beauty"
-                    />
-                  </label>
+                  {shouldShowVerticalSearch ? (
+                    <label className="field compact-field">
+                      <span>Search verticals</span>
+                      <input
+                        value={verticalSearch}
+                        onChange={(event) => setVerticalSearch(event.target.value)}
+                        placeholder="fashion, industrial, beauty"
+                      />
+                    </label>
+                  ) : null}
                   <FilterBlock
                     title=""
                     items={filteredVerticalOptions.slice(0, 80)}
@@ -2023,6 +2813,7 @@ export default function App() {
                   selected={query.currentPlatforms}
                   onToggle={(value) => updateQuery({ currentPlatforms: toggle(query.currentPlatforms, value) })}
                   formatLabel={humanizeToken}
+                  searchable
                 />
 
                 <FilterBlock
@@ -2031,6 +2822,7 @@ export default function App() {
                   selected={query.removedPlatforms}
                   onToggle={(value) => updateQuery({ removedPlatforms: toggle(query.removedPlatforms, value) })}
                   formatLabel={humanizeToken}
+                  searchable
                 />
 
                 <FilterBlock
@@ -2039,6 +2831,7 @@ export default function App() {
                   selected={query.recentPlatforms}
                   onToggle={(value) => updateQuery({ recentPlatforms: toggle(query.recentPlatforms, value) })}
                   formatLabel={humanizeToken}
+                  searchable
                 />
 
                 <FilterBlock
@@ -2049,6 +2842,11 @@ export default function App() {
                 />
 
                 <div className="toggle-grid compact-toggle-grid">
+                  <ToggleRow
+                    label="Live sites only"
+                    checked={query.liveSitesOnly}
+                    onChange={() => updateQuery({ liveSitesOnly: !query.liveSitesOnly })}
+                  />
                   <ToggleRow
                     label="Has previous domain"
                     checked={query.hasDomainMigration}
@@ -2065,11 +2863,6 @@ export default function App() {
                     onChange={() => updateQuery({ hasContact: !query.hasContact })}
                   />
                   <ToggleRow
-                    label="Has SE Ranking analysis"
-                    checked={query.hasSeRankingAnalysis}
-                    onChange={() => updateQuery({ hasSeRankingAnalysis: !query.hasSeRankingAnalysis })}
-                  />
-                  <ToggleRow
                     label="Selected tray only"
                     checked={query.selectedOnly}
                     onChange={() => updateQuery({ selectedOnly: !query.selectedOnly })}
@@ -2079,6 +2872,7 @@ export default function App() {
 
               <SidebarSection
                 title="Migration quality"
+                description="Qualify previous-domain and CMS confidence once you already have a shortlist."
                 activeCount={migrationSectionCount}
                 open={sidebarSections.migration}
                 onToggle={() => toggleSidebarSection("migration")}
@@ -2133,6 +2927,47 @@ export default function App() {
                   formatLabel={humanizeToken}
                 />
 
+              </SidebarSection>
+
+              <SidebarSection
+                title="Analysis & SEO"
+                description="Use saved SEO analysis states once you move from discovery into validation."
+                activeCount={analysisSectionCount}
+                open={sidebarSections.analysis}
+                onToggle={() => toggleSidebarSection("analysis")}
+              >
+                <div className="toggle-grid compact-toggle-grid">
+                  <ToggleRow
+                    label="Has SE Ranking analysis"
+                    checked={query.hasSeRankingAnalysis}
+                    onChange={() => updateQuery({ hasSeRankingAnalysis: !query.hasSeRankingAnalysis })}
+                  />
+                  <ToggleRow
+                    label="Has site status check"
+                    checked={query.hasSiteStatusCheck}
+                    onChange={() => updateQuery({ hasSiteStatusCheck: !query.hasSiteStatusCheck })}
+                  />
+                  <ToggleRow
+                    label="Has Screaming Frog audit"
+                    checked={query.hasScreamingFrogAudit}
+                    onChange={() => updateQuery({ hasScreamingFrogAudit: !query.hasScreamingFrogAudit })}
+                  />
+                  <ToggleRow
+                    label="SF internal errors"
+                    checked={query.hasScreamingFrogInternalErrors}
+                    onChange={() => updateQuery({ hasScreamingFrogInternalErrors: !query.hasScreamingFrogInternalErrors })}
+                  />
+                  <ToggleRow
+                    label="SF location pages"
+                    checked={query.hasScreamingFrogLocationPages}
+                    onChange={() => updateQuery({ hasScreamingFrogLocationPages: !query.hasScreamingFrogLocationPages })}
+                  />
+                  <ToggleRow
+                    label="SF service pages"
+                    checked={query.hasScreamingFrogServicePages}
+                    onChange={() => updateQuery({ hasScreamingFrogServicePages: !query.hasScreamingFrogServicePages })}
+                  />
+                </div>
                 <FilterBlock
                   title="SE Ranking analysis type"
                   items={options?.seRankingAnalysisTypes ?? []}
@@ -2148,14 +2983,73 @@ export default function App() {
                   onToggle={(value) => updateQuery({ seRankingOutcomeFlags: toggle(query.seRankingOutcomeFlags, value) })}
                   formatLabel={humanizeToken}
                 />
+                <FilterBlock
+                  title="Site status"
+                  items={options?.siteStatusCategories ?? []}
+                  selected={query.siteStatusCategories}
+                  onToggle={(value) => updateQuery({ siteStatusCategories: toggle(query.siteStatusCategories, value) })}
+                  formatLabel={humanizeToken}
+                />
+                <FilterBlock
+                  title="Screaming Frog status"
+                  items={options?.screamingFrogStatuses ?? []}
+                  selected={query.screamingFrogStatuses}
+                  onToggle={(value) => updateQuery({ screamingFrogStatuses: toggle(query.screamingFrogStatuses, value) })}
+                  formatLabel={humanizeToken}
+                />
+                <FilterBlock
+                  title="SF homepage status"
+                  items={options?.screamingFrogHomepageStatuses ?? []}
+                  selected={query.screamingFrogHomepageStatuses}
+                  onToggle={(value) => updateQuery({ screamingFrogHomepageStatuses: toggle(query.screamingFrogHomepageStatuses, value) })}
+                  formatLabel={humanizeToken}
+                />
+                <FilterBlock
+                  title="SF title issues"
+                  items={options?.screamingFrogTitleFlags ?? []}
+                  selected={query.screamingFrogTitleFlags}
+                  onToggle={(value) => updateQuery({ screamingFrogTitleFlags: toggle(query.screamingFrogTitleFlags, value) })}
+                  formatLabel={humanizeToken}
+                />
+                <FilterBlock
+                  title="SF meta issues"
+                  items={options?.screamingFrogMetaFlags ?? []}
+                  selected={query.screamingFrogMetaFlags}
+                  onToggle={(value) => updateQuery({ screamingFrogMetaFlags: toggle(query.screamingFrogMetaFlags, value) })}
+                  formatLabel={humanizeToken}
+                />
+                <FilterBlock
+                  title="SF canonical issues"
+                  items={options?.screamingFrogCanonicalFlags ?? []}
+                  selected={query.screamingFrogCanonicalFlags}
+                  onToggle={(value) => updateQuery({ screamingFrogCanonicalFlags: toggle(query.screamingFrogCanonicalFlags, value) })}
+                  formatLabel={humanizeToken}
+                />
               </SidebarSection>
 
               <SidebarSection
                 title="Advanced"
+                description="Lower-frequency commercial and stack signals for deeper segmentation."
                 activeCount={advancedSectionCount}
                 open={sidebarSections.advanced}
                 onToggle={() => toggleSidebarSection("advanced")}
               >
+                <section className="filter-block">
+                  <h3>Minimum values</h3>
+                  <div className="advanced-number-grid">
+                    <AdvancedNumberField label="Followers" value={query.minSocial} onChange={(value) => updateQuery({ minSocial: value })} placeholder="10000" />
+                    <AdvancedNumberField label="Revenue" value={query.minRevenue} onChange={(value) => updateQuery({ minRevenue: value })} placeholder="500000" />
+                    <AdvancedNumberField label="Employees" value={query.minEmployees} onChange={(value) => updateQuery({ minEmployees: value })} placeholder="10" />
+                    <AdvancedNumberField label="SKU" value={query.minSku} onChange={(value) => updateQuery({ minSku: value })} placeholder="100" />
+                    <AdvancedNumberField
+                      label="Tech spend"
+                      value={query.minTechnologySpend}
+                      onChange={(value) => updateQuery({ minTechnologySpend: value })}
+                      placeholder="1000"
+                    />
+                  </div>
+                </section>
+
                 <div className="toggle-grid compact-toggle-grid">
                   <ToggleRow
                     label="Has marketing stack"
@@ -2174,6 +3068,76 @@ export default function App() {
                     onChange={() => updateQuery({ migrationOnly: !query.migrationOnly })}
                   />
                 </div>
+
+                <FilterBlock
+                  title="Marketing tools"
+                  items={options?.marketingPlatforms ?? []}
+                  selected={query.marketingPlatforms}
+                  onToggle={(value) => updateQuery({ marketingPlatforms: toggle(query.marketingPlatforms, value) })}
+                  onSelectAll={() => updateQuery({ marketingPlatforms: options?.marketingPlatforms ?? [] })}
+                  onClearAll={() => updateQuery({ marketingPlatforms: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="CRM tools"
+                  items={options?.crmPlatforms ?? []}
+                  selected={query.crmPlatforms}
+                  onToggle={(value) => updateQuery({ crmPlatforms: toggle(query.crmPlatforms, value) })}
+                  onSelectAll={() => updateQuery({ crmPlatforms: options?.crmPlatforms ?? [] })}
+                  onClearAll={() => updateQuery({ crmPlatforms: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="Payment tools"
+                  items={options?.paymentPlatforms ?? []}
+                  selected={query.paymentPlatforms}
+                  onToggle={(value) => updateQuery({ paymentPlatforms: toggle(query.paymentPlatforms, value) })}
+                  onSelectAll={() => updateQuery({ paymentPlatforms: options?.paymentPlatforms ?? [] })}
+                  onClearAll={() => updateQuery({ paymentPlatforms: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="Hosting providers"
+                  items={options?.hostingProviders ?? []}
+                  selected={query.hostingProviders}
+                  onToggle={(value) => updateQuery({ hostingProviders: toggle(query.hostingProviders, value) })}
+                  onSelectAll={() => updateQuery({ hostingProviders: options?.hostingProviders ?? [] })}
+                  onClearAll={() => updateQuery({ hostingProviders: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="Agencies"
+                  items={options?.agencies ?? []}
+                  selected={query.agencies}
+                  onToggle={(value) => updateQuery({ agencies: toggle(query.agencies, value) })}
+                  onSelectAll={() => updateQuery({ agencies: options?.agencies ?? [] })}
+                  onClearAll={() => updateQuery({ agencies: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="AI tools"
+                  items={options?.aiTools ?? []}
+                  selected={query.aiTools}
+                  onToggle={(value) => updateQuery({ aiTools: toggle(query.aiTools, value) })}
+                  onSelectAll={() => updateQuery({ aiTools: options?.aiTools ?? [] })}
+                  onClearAll={() => updateQuery({ aiTools: [] })}
+                  searchable
+                />
+
+                <FilterBlock
+                  title="Compliance"
+                  items={options?.complianceFlags ?? []}
+                  selected={query.complianceFlags}
+                  onToggle={(value) => updateQuery({ complianceFlags: toggle(query.complianceFlags, value) })}
+                  onSelectAll={() => updateQuery({ complianceFlags: options?.complianceFlags ?? [] })}
+                  onClearAll={() => updateQuery({ complianceFlags: [] })}
+                  searchable
+                />
               </SidebarSection>
             </>
           )}
@@ -2181,13 +3145,30 @@ export default function App() {
 
         <section className="grid-panel">
           <div className="grid-toolbar">
-            <div>
+            <div className="worksheet-title-block">
+              <p className="kicker-inline">Worksheet</p>
               <h2>Lead worksheet</h2>
               <p>
                 {loading ? "Refreshing…" : `${leads?.total ?? 0} matching leads`} · sorted by {sortBadge(query)}
               </p>
             </div>
             <div className="toolbar-actions">
+              <button
+                className="primary-button small-button"
+                disabled={!leads?.total || selectionLoading}
+                onClick={() => void selectAllFilteredLeads()}
+                type="button"
+              >
+                {selectionLoading ? "Selecting…" : `Select all filtered${leads?.total ? ` (${leads.total.toLocaleString()})` : ""}`}
+              </button>
+              <button
+                className="ghost-button small-button danger-button"
+                disabled={!tray?.count}
+                onClick={() => void clearTraySelection()}
+                type="button"
+              >
+                Clear all selected
+              </button>
               <button
                 className={`ghost-button small-button ${effectiveSidebarCollapsed ? "timeline-toggle-active" : ""}`}
                 onClick={toggleSidebarVisibility}
@@ -2225,6 +3206,9 @@ export default function App() {
               <div className="page-chip">
                 Page {leads?.page ?? 1} of {leads?.pages ?? 1}
               </div>
+              <div className="page-chip selection-chip">
+                {(tray?.count ?? 0).toLocaleString()} selected
+              </div>
             </div>
           </div>
 
@@ -2249,7 +3233,7 @@ export default function App() {
             </div>
           ) : null}
 
-          <div className="active-filter-row">
+          <div className="active-filter-row worksheet-chip-row">
             {activeFilterChips.map((chip) => (
               <button className="filter-chip" key={`${chip.group}-${chip.label}`} onClick={chip.clear} type="button">
                 <span>{chip.group}</span>
@@ -2259,7 +3243,14 @@ export default function App() {
             ))}
           </div>
 
-          <div className="quick-toggle-row">
+          <div className="quick-toggle-row worksheet-toggle-row">
+            <button
+              className={`ghost-button small-button ${query.liveSitesOnly ? "timeline-toggle-active" : ""}`}
+              onClick={() => updateQuery({ liveSitesOnly: !query.liveSitesOnly })}
+              type="button"
+            >
+              Live sites only
+            </button>
             <button
               className={`ghost-button small-button ${query.hasDomainMigration ? "timeline-toggle-active" : ""}`}
               onClick={() => updateQuery({ hasDomainMigration: !query.hasDomainMigration })}
@@ -2320,115 +3311,692 @@ export default function App() {
             >
               SE analyzed
             </button>
+            <button
+              className={`ghost-button small-button ${query.hasSiteStatusCheck ? "timeline-toggle-active" : ""}`}
+              onClick={() => updateQuery({ hasSiteStatusCheck: !query.hasSiteStatusCheck })}
+              type="button"
+            >
+              Site checked
+            </button>
           </div>
 
-          <section className={`migration-timing-row ${hasMigrationTiming ? "migration-timing-active" : ""}`}>
-            <div className="migration-timing-summary">
-              <span className="kicker-inline">Migration timing</span>
-              <strong>{hasMigrationTiming ? migrationTimingLogicLabel : "No migration timing filter"}</strong>
-            </div>
-            <div className="migration-timing-controls">
-              <button
-                className={`migration-timing-chip ${hasCmsTiming ? "migration-timing-chip-active" : ""}`}
-                onClick={() => {
-                  if (hasCmsTiming) {
-                    clearCmsMigrationTiming();
-                  }
-                }}
-                type="button"
-              >
-                <span>CMS migration</span>
-                <strong>{cmsTimingSummary}</strong>
-              </button>
-              <div className="migration-timing-logic" role="group" aria-label="Migration timing logic">
-                <button
-                  className={`ghost-button small-button ${query.migrationTimingOperator === "and" ? "timeline-toggle-active" : ""}`}
-                  onClick={() => updateQuery({ migrationTimingOperator: "and" })}
-                  type="button"
-                >
-                  AND
-                </button>
-                <button
-                  className={`ghost-button small-button ${query.migrationTimingOperator === "or" ? "timeline-toggle-active" : ""}`}
-                  onClick={() => updateQuery({ migrationTimingOperator: "or" })}
-                  type="button"
-                >
-                  OR
-                </button>
+          <section className="worksheet-analysis-bar">
+            <article className={`analysis-module migration-analysis-module ${hasMigrationTiming ? "migration-analysis-active" : ""}`}>
+              <div className="migration-analysis-header">
+                <div className="migration-analysis-summary">
+                  <span className="kicker-inline">Migration analysis</span>
+                  <strong>{migrationCaptureLabel}</strong>
+                  <small>Capture all migrations by leaving dates blank, or narrow the worksheet before exporting and reviewing.</small>
+                  {selectedCmsCoverageWarnings.length ? (
+                    <small className="coverage-warning">
+                      Removed-state export missing for {selectedCmsCoverageWarnings.join(", ")}. Treat CMS timing as partial.
+                    </small>
+                  ) : null}
+                </div>
+                <div className="migration-analysis-status">
+                  <div className="analysis-stat">
+                    <span>Selected leads</span>
+                    <strong>{tray?.count ?? 0}</strong>
+                  </div>
+                  <div className="analysis-stat">
+                    <span>SE eligible</span>
+                    <strong>{seRankingSummary?.summary.eligibleCount ?? 0}</strong>
+                  </div>
+                  <div className="analysis-stat">
+                    <span>To run</span>
+                    <strong>{seRankingSummary?.summary.toRunCount ?? 0}</strong>
+                  </div>
+                </div>
               </div>
-              <button
-                className={`migration-timing-chip ${hasDomainTiming ? "migration-timing-chip-active" : ""}`}
-                onClick={() => {
-                  if (hasDomainTiming) {
-                    clearDomainMigrationTiming();
-                  }
-                }}
-                type="button"
-              >
-                <span>Domain migration</span>
-                <strong>{domainTimingSummary}</strong>
-              </button>
-            </div>
-            <div className="migration-timing-actions">
-              <button className="ghost-button small-button" disabled={!hasCmsTiming} onClick={clearCmsMigrationTiming} type="button">
-                Clear CMS
-              </button>
-              <button className="ghost-button small-button" disabled={!hasDomainTiming} onClick={clearDomainMigrationTiming} type="button">
-                Clear domain
-              </button>
-              <button className="ghost-button small-button" disabled={!hasMigrationTiming} onClick={clearAllMigrationTiming} type="button">
-                Clear all
-              </button>
-            </div>
+
+              <details className="source-coverage-panel accordion-section">
+                <summary className="migration-analysis-section-header accordion-summary">
+                  <div>
+                    <span className="kicker-inline">BuiltWith source coverage</span>
+                    <strong>Service CMS timing quality</strong>
+                  </div>
+                  <span className="accordion-indicator">Open</span>
+                </summary>
+                <div className="source-coverage-grid">
+                  {(summary?.source_coverage ?? []).map((item) => (
+                    <div className="source-coverage-row" key={item.platform}>
+                      <div>
+                        <strong>{humanizeToken(item.platform)}</strong>
+                        <small>{item.notes.length ? item.notes.join(" · ") : "Current, recent, and removed exports present"}</small>
+                      </div>
+                      <div className="source-coverage-events">
+                        <StatusBadge label={item.hasCurrent ? "Live" : "No live"} tone={item.hasCurrent ? "positive" : "neutral"} />
+                        <StatusBadge label={item.hasRecent ? "Recent" : "No recent"} tone={item.hasRecent ? "positive" : "neutral"} />
+                        <StatusBadge label={item.hasRemoved ? "Removed" : "No removed"} tone={item.hasRemoved ? "positive" : "warning"} />
+                      </div>
+                      <StatusBadge label={sourceCoverageLabel(item.timingQuality)} tone={sourceCoverageTone(item.timingQuality)} />
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              <div className="migration-analysis-grid">
+                <details className="migration-analysis-section accordion-section">
+                  <summary className="migration-analysis-section-header accordion-summary">
+                    <div>
+                      <span className="kicker-inline">Worksheet migration filters</span>
+                      <strong>Choose the migration dates you want visible in the sheet</strong>
+                    </div>
+                    <span className="accordion-indicator">Open</span>
+                  </summary>
+
+                  <div className="accordion-body">
+                    <div className="migration-analysis-section-tools">
+                      <div className="migration-timing-logic" role="group" aria-label="Migration timing logic">
+                        <button
+                          className={`ghost-button small-button ${query.migrationTimingOperator === "and" ? "timeline-toggle-active" : ""}`}
+                          onClick={() => updateQuery({ migrationTimingOperator: "and" })}
+                          type="button"
+                        >
+                          Match both
+                        </button>
+                        <button
+                          className={`ghost-button small-button ${query.migrationTimingOperator === "or" ? "timeline-toggle-active" : ""}`}
+                          onClick={() => updateQuery({ migrationTimingOperator: "or" })}
+                          type="button"
+                        >
+                          Match either
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="migration-filter-grid">
+                      <details className="migration-filter-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">CMS migration</span>
+                            <strong>{cmsTimingSummary}</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="migration-filter-fields">
+                            <label className="field compact-field">
+                              <span>From</span>
+                              <input type="date" value={query.cmsMigrationFrom} onChange={(event) => updateQuery({ cmsMigrationFrom: event.target.value })} />
+                            </label>
+                            <label className="field compact-field">
+                              <span>To</span>
+                              <input type="date" value={query.cmsMigrationTo} onChange={(event) => updateQuery({ cmsMigrationTo: event.target.value })} />
+                            </label>
+                          </div>
+                          <div className="migration-preset-row">
+                            {MIGRATION_DATE_PRESETS.map((preset) => (
+                              <button
+                                key={`cms-${preset.label}`}
+                                className="ghost-button small-button"
+                                onClick={() => applyMigrationPreset("cms", preset.months)}
+                                type="button"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                            <button className="ghost-button small-button" onClick={clearCmsMigrationTiming} type="button">
+                              All
+                            </button>
+                          </div>
+                          <div className="migration-analysis-actions">
+                            <button className="ghost-button small-button" disabled={!hasCmsTiming} onClick={clearCmsMigrationTiming} type="button">
+                              Clear CMS dates
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+
+                      <details className="migration-filter-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Unchanged CMS</span>
+                            <strong>{cmsUnchangedSummary}</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="migration-filter-fields">
+                            <label className="field compact-field">
+                              <span>Unchanged for at least</span>
+                              <input
+                                min="1"
+                                max="50"
+                                placeholder="Years"
+                                type="number"
+                                value={query.cmsUnchangedYears}
+                                onChange={(event) => updateQuery({ cmsUnchangedYears: event.target.value })}
+                              />
+                            </label>
+                          </div>
+                          <p className="field-help">
+                            Shows live leads whose current CMS was first detected before this window, with no newer CMS detected or CMS migration inside the same period.
+                          </p>
+                          <div className="migration-preset-row">
+                            {[1, 2, 3, 5].map((years) => (
+                              <button
+                                key={`cms-unchanged-${years}`}
+                                className="ghost-button small-button"
+                                onClick={() => updateQuery({ cmsUnchangedYears: String(years) })}
+                                type="button"
+                              >
+                                {years}y
+                              </button>
+                            ))}
+                            <button className="ghost-button small-button" onClick={clearCmsUnchangedYears} type="button">
+                              All
+                            </button>
+                          </div>
+                          <div className="migration-analysis-actions">
+                            <button className="ghost-button small-button" disabled={!hasCmsUnchangedYears} onClick={clearCmsUnchangedYears} type="button">
+                              Clear unchanged filter
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+
+                      <details className="migration-filter-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Domain migration</span>
+                            <strong>{domainTimingSummary}</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="migration-filter-fields">
+                            <label className="field compact-field">
+                              <span>From</span>
+                              <input type="date" value={query.domainMigrationFrom} onChange={(event) => updateQuery({ domainMigrationFrom: event.target.value })} />
+                            </label>
+                            <label className="field compact-field">
+                              <span>To</span>
+                              <input type="date" value={query.domainMigrationTo} onChange={(event) => updateQuery({ domainMigrationTo: event.target.value })} />
+                            </label>
+                          </div>
+                          <div className="migration-preset-row">
+                            {MIGRATION_DATE_PRESETS.map((preset) => (
+                              <button
+                                key={`domain-${preset.label}`}
+                                className="ghost-button small-button"
+                                onClick={() => applyMigrationPreset("domain", preset.months)}
+                                type="button"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                            <button className="ghost-button small-button" onClick={clearDomainMigrationTiming} type="button">
+                              All
+                            </button>
+                          </div>
+                          <div className="migration-analysis-actions">
+                            <button className="ghost-button small-button" disabled={!hasDomainTiming} onClick={clearDomainMigrationTiming} type="button">
+                              Clear domain dates
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+
+                    <div className="migration-analysis-actions">
+                      <button className="ghost-button small-button" disabled={!hasMigrationTiming} onClick={clearAllMigrationTiming} type="button">
+                        Clear all migration filters
+                      </button>
+                    </div>
+                  </div>
+                </details>
+
+                <details className="migration-analysis-section accordion-section">
+                  <summary className="migration-analysis-section-header accordion-summary">
+                    <div>
+                      <span className="kicker-inline">Screaming Frog audits</span>
+                      <strong>Run local technical crawls on selected leads</strong>
+                    </div>
+                    <div className="accordion-summary-meta">
+                      <small>{screamingFrogLabel}</small>
+                      <span className="accordion-indicator">Open</span>
+                    </div>
+                  </summary>
+
+                  <div className="accordion-body">
+                    <div className="se-analysis-grid">
+                      <details className="se-analysis-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Local crawl</span>
+                            <strong>Run Screaming Frog on this Mac and save the summary</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="se-ranking-controls">
+                            <label className="field compact-field se-ranking-field">
+                              <span>Crawl mode</span>
+                              <select value={screamingFrogCrawlMode} onChange={(event) => setScreamingFrogCrawlMode(event.target.value as ScreamingFrogCrawlMode)}>
+                                <option value="bounded_audit">Bounded audit</option>
+                                <option value="deep_audit">Deep audit</option>
+                              </select>
+                            </label>
+                            <div className="se-ranking-estimate">
+                              <span>{screamingFrogLabel}</span>
+                              <span>{screamingFrogSummary ? `${screamingFrogSummary.summary.estimatedRuns} local crawls` : "Preview to confirm run volume"}</span>
+                              <span>Already audited {screamingFrogSummary?.summary.alreadyAuditedCount ?? 0}</span>
+                              <span>Auto-selects the best local config for the detected CMS</span>
+                              <span>{screamingFrogBreakdown || "Unknown or mixed sites use the generic fallback config"}</span>
+                            </div>
+                          </div>
+                          {screamingFrogRunStatus ? (
+                            <div className={`inline-run-status tone-${screamingFrogRunStatus.tone}`}>
+                              <div className="inline-run-status-header">
+                                <StatusBadge label={screamingFrogRunStatus.label} tone={screamingFrogRunStatus.tone} />
+                                {screamingFrogLoading ? <strong>Running locally…</strong> : null}
+                              </div>
+                              <p>{screamingFrogRunStatus.message}</p>
+                            </div>
+                          ) : null}
+                          <div className="se-ranking-actions">
+                            <button
+                              className="ghost-button small-button danger-button"
+                              disabled={!tray?.count || screamingFrogLoading}
+                              onClick={() => void clearTraySelection()}
+                              type="button"
+                            >
+                              Clear selection
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!tray?.count || screamingFrogLoading}
+                              onClick={() => void handleRunScreamingFrogAudit(false)}
+                              type="button"
+                            >
+                              {screamingFrogLoading ? "Loading…" : "Preview run"}
+                            </button>
+                            <button
+                              className="primary-button small-button"
+                              disabled={!screamingFrogSummary?.summary.toRunCount || screamingFrogLoading}
+                              onClick={() => void handleRunScreamingFrogAudit(true)}
+                              type="button"
+                            >
+                              {screamingFrogLoading ? "Running…" : "Run audit"}
+                            </button>
+                            <button
+                              className="ghost-button small-button danger-button"
+                              disabled={!screamingFrogJobBatch?.isActive || screamingFrogLoading}
+                              onClick={() => void handleStopScreamingFrogAudit()}
+                              type="button"
+                            >
+                              Stop crawl
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!screamingFrogSummary?.summary.alreadyAuditedCount || screamingFrogLoading}
+                              onClick={() => void handleRefreshScreamingFrogAudit()}
+                              type="button"
+                            >
+                              Refresh audited results
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+
+                      <details className="se-analysis-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Audit output</span>
+                            <strong>View the latest Screaming Frog results beside the controls</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          {screamingFrogJobBatch ? (
+                            <div className="inline-audit-placeholder">
+                              <strong>{screamingFrogJobBatch.isActive ? "Live crawl monitor" : "Latest crawl batch"}</strong>
+                              <p>
+                                Queued {screamingFrogJobCounts.queued ?? 0} · Discovering {screamingFrogJobCounts.discovering ?? 0} · Running {screamingFrogJobCounts.running ?? 0} · Success {screamingFrogJobCounts.success ?? 0} · Partial {screamingFrogJobCounts.partial ?? 0} · Error {screamingFrogJobCounts.error ?? 0}
+                              </p>
+                            </div>
+                          ) : null}
+                          {screamingFrogJobBatch?.items?.length ? (
+                            <div className="inline-audit-stack">
+                              <div className="inline-audit-list">
+                              {screamingFrogJobBatch.items.slice(0, 8).map((item) => (
+                                <div className="inline-audit-item" key={item.id}>
+                                  <div className="inline-audit-item-header">
+                                    <strong>{item.root_domain}</strong>
+                                    <StatusBadge label={humanizeToken(item.status)} tone={confidenceTone(item.status)} />
+                                  </div>
+                                  <div className="inline-audit-item-meta">
+                                    <span>{humanizeToken(item.resolved_platform_family || "generic")}</span>
+                                    <span>{item.seed_strategy ? humanizeToken(item.seed_strategy) : "Seed strategy pending"}</span>
+                                    <span>{item.seed_count ? `${item.seed_count} seed URLs` : "No seeds yet"}</span>
+                                    <span>{item.result_quality ? humanizeToken(item.result_quality) : "Pending result quality"}</span>
+                                  </div>
+                                  {item.message ? <p className="subtle-copy">{item.message}</p> : null}
+                                  <div className="drawer-actions">
+                                    <button className="ghost-button small-button" onClick={() => openScreamingFrogAudit(item.root_domain)} type="button">
+                                      Open full audit
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                              </div>
+                              <div className="inline-log-panel">
+                                <div className="inline-log-header">
+                                  <strong>Crawl log</strong>
+                                  <small>{screamingFrogJobBatch.items.length} jobs in batch</small>
+                                </div>
+                                <div className="inline-log-list">
+                                  {screamingFrogJobBatch.items.map((item) => (
+                                    <div className="inline-log-entry" key={`${item.id}-log`}>
+                                      <span className={`inline-log-dot status-${item.status}`}></span>
+                                      <div className="inline-log-copy">
+                                        <strong>{item.root_domain}</strong>
+                                        <small>
+                                          {humanizeToken(item.status)}
+                                          {item.updated_at ? ` · ${formatDate(item.updated_at)}` : ""}
+                                        </small>
+                                        <p>
+                                          {item.message || "Waiting in queue"}
+                                          {item.seed_strategy ? ` · ${humanizeToken(item.seed_strategy)}` : ""}
+                                          {item.seed_count ? ` · ${item.seed_count} seeds` : ""}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : screamingFrogRecentResults.length ? (
+                            <div className="inline-audit-list">
+                              {screamingFrogRecentResults.slice(0, 8).map((result: ScreamingFrogRunResponse["results"][number]) => (
+                                <div className="inline-audit-item" key={`${result.root_domain}-${result.status}`}>
+                                  <div className="inline-audit-item-header">
+                                    <strong>{result.root_domain}</strong>
+                                    <StatusBadge label={humanizeToken(result.status)} tone={confidenceTone(result.status)} />
+                                  </div>
+                                  <div className="inline-audit-item-meta">
+                                    <span>{humanizeToken(result.resolved_platform_family || "generic")}</span>
+                                    <span>{result.pages_crawled ? `${formatNumber(result.pages_crawled)} pages` : "No page count yet"}</span>
+                                    <span>{result.homepage_status_category ? humanizeToken(result.homepage_status_category) : "No homepage status yet"}</span>
+                                  </div>
+                                  {result.error_message ? <p className="subtle-copy">{result.error_message}</p> : null}
+                                  <div className="drawer-actions">
+                                    <button className="ghost-button small-button" onClick={() => openScreamingFrogAudit(result.root_domain)} type="button">
+                                      Open full audit
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : screamingFrogSummary ? (
+                            <div className="inline-audit-placeholder">
+                              <strong>{screamingFrogSummary.summary.toRunCount} audits ready to run</strong>
+                              <p>
+                                Run the audit and the latest per-domain results will appear here immediately, without needing to open the drawer or hunt in the worksheet.
+                              </p>
+                              <div className="shell-pill-row">
+                                {screamingFrogSummary.summary.resolvedConfigBreakdown.map((item) => (
+                                  <span className="shell-pill" key={item.platformFamily}>
+                                    {item.label}: {item.count}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="inline-audit-placeholder">
+                              <strong>No audit results yet</strong>
+                              <p>Select tray leads and preview or run a Screaming Frog audit to populate this panel.</p>
+                            </div>
+                          )}
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </details>
+
+                <details className="migration-analysis-section accordion-section">
+                  <summary className="migration-analysis-section-header accordion-summary">
+                    <div>
+                      <span className="kicker-inline">Site status checks</span>
+                      <strong>Check for 404s, redirects, and unreachable sites</strong>
+                    </div>
+                    <div className="accordion-summary-meta">
+                      <small>{siteStatusLabel}</small>
+                      <span className="accordion-indicator">Open</span>
+                    </div>
+                  </summary>
+
+                  <div className="accordion-body">
+                    <div className="se-analysis-grid">
+                      <details className="se-analysis-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Bulk site check</span>
+                            <strong>Run saved website health checks on selected leads</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="se-ranking-controls">
+                            <div className="se-ranking-estimate">
+                              <span>{siteStatusLabel}</span>
+                              <span>{siteStatusSummary ? `${siteStatusSummary.summary.estimatedRequests} requests` : "Preview to confirm volume"}</span>
+                              <span>Already checked {siteStatusSummary?.summary.alreadyCheckedCount ?? 0}</span>
+                            </div>
+                          </div>
+                          <div className="se-ranking-actions">
+                            <button
+                              className="ghost-button small-button danger-button"
+                              disabled={!tray?.count || siteStatusLoading}
+                              onClick={() => void clearTraySelection()}
+                              type="button"
+                            >
+                              Clear selection
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!tray?.count || siteStatusLoading}
+                              onClick={() => void handleRunSiteStatusCheck(false)}
+                              type="button"
+                            >
+                              {siteStatusLoading ? "Checking…" : "Preview run"}
+                            </button>
+                            <button
+                              className="primary-button small-button"
+                              disabled={!siteStatusSummary?.summary.toRunCount || siteStatusLoading}
+                              onClick={() => void handleRunSiteStatusCheck(true)}
+                              type="button"
+                            >
+                              {siteStatusLoading ? "Running…" : "Run site check"}
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!siteStatusSummary?.summary.alreadyCheckedCount || siteStatusLoading}
+                              onClick={() => void handleRefreshSiteStatusCheck()}
+                              type="button"
+                            >
+                              Refresh checked results
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </details>
+
+                <details className="migration-analysis-section accordion-section">
+                  <summary className="migration-analysis-section-header accordion-summary">
+                    <div>
+                      <span className="kicker-inline">SE Ranking checks</span>
+                      <strong>Run SEO checks on selected migrations</strong>
+                    </div>
+                    <div className="accordion-summary-meta">
+                      <small>{seEligibilityLabel}</small>
+                      <span className="accordion-indicator">Open</span>
+                    </div>
+                  </summary>
+
+                  <div className="accordion-body">
+                    <div className="se-analysis-grid">
+                      <details className="se-analysis-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Migration-based check</span>
+                            <strong>One month before migration vs today</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="se-ranking-controls">
+                            <label className="field compact-field se-ranking-field">
+                              <span>Migration type</span>
+                              <select value={seRankingType} onChange={(event) => setSeRankingType(event.target.value as SeRankingAnalysisType)}>
+                                <option value="cms_migration">CMS migration</option>
+                                <option value="domain_migration">Domain migration</option>
+                              </select>
+                            </label>
+                            <div className="se-ranking-estimate">
+                              <span>{seEligibilityLabel}</span>
+                              <span>
+                                {seRankingSummary
+                                  ? `${seRankingSummary.summary.estimatedCredits} credits`
+                                  : "Click preview run to confirm credits"}
+                              </span>
+                              <span>Already analyzed {seRankingSummary?.summary.alreadyAnalyzedCount ?? 0}</span>
+                            </div>
+                          </div>
+                          <div className="se-ranking-actions">
+                            <button className="ghost-button small-button" disabled={!leads?.total || seRankingLoading} onClick={() => void handleRunSeRankingAnalysis(false)} type="button">
+                              {seRankingLoading ? "Checking…" : "Preview run"}
+                            </button>
+                            <button
+                              className="primary-button small-button"
+                              disabled={!seRankingSummary?.summary.toRunCount || seRankingLoading || seRankingSummaryDirty}
+                              onClick={() => void handleRunSeRankingAnalysis(true)}
+                              type="button"
+                            >
+                              {seRankingLoading ? "Running…" : "Run migration check"}
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!seRankingSummary?.summary.alreadyAnalyzedCount || seRankingLoading || seRankingSummaryDirty}
+                              onClick={() => void handleRefreshSeRankingAnalysis()}
+                              type="button"
+                            >
+                              Refresh displayed results
+                            </button>
+                          </div>
+                          {seRankingSummaryDirty ? (
+                            <p className="muted">Filters changed. Click <strong>Preview run</strong> to refresh the SE Ranking estimate for the current worksheet view.</p>
+                          ) : null}
+                        </div>
+                      </details>
+
+                      <details className="se-analysis-card accordion-card">
+                        <summary className="migration-filter-card-header accordion-summary">
+                          <div>
+                            <span className="kicker-inline">Manual comparison</span>
+                            <strong>Compare any two months for the selected leads</strong>
+                          </div>
+                          <span className="accordion-indicator">Open</span>
+                        </summary>
+                        <div className="accordion-body">
+                          <div className="se-ranking-controls manual-se-ranking-controls">
+                            <label className="field compact-field se-ranking-field">
+                              <span>First month</span>
+                              <input type="month" value={manualSeFirstMonth} onChange={(event) => setManualSeFirstMonth(event.target.value)} />
+                            </label>
+                            <label className="field compact-field se-ranking-field">
+                              <span>Second month</span>
+                              <input type="month" value={manualSeSecondMonth} onChange={(event) => setManualSeSecondMonth(event.target.value)} />
+                            </label>
+                            <div className="se-ranking-estimate">
+                              <span>
+                                {manualSePreview
+                                  ? `${manualSePreview.summary.eligibleCount} eligible · ${manualSePreview.summary.estimatedCredits} credits`
+                                  : "Choose two months to compare selected leads"}
+                              </span>
+                              <span>Preview {manualSePreview?.summary.estimatedRequests ?? 0} requests</span>
+                              <span>Skipped {manualSePreview?.summary.excluded.length ?? 0}</span>
+                            </div>
+                          </div>
+                          <div className="se-ranking-actions">
+                            <button
+                              className="ghost-button small-button danger-button"
+                              disabled={!tray?.count || manualSeLoading}
+                              onClick={() => void clearTraySelection()}
+                              type="button"
+                            >
+                              Clear selection
+                            </button>
+                            <button
+                              className="ghost-button small-button"
+                              disabled={!tray?.count || !hasManualSeMonths || manualSeLoading}
+                              onClick={() => void handlePreviewManualSeRankingAnalysis()}
+                              type="button"
+                            >
+                              {manualSeLoading ? "Checking…" : "Preview run"}
+                            </button>
+                            <button
+                              className="primary-button small-button"
+                              disabled={!tray?.count || !hasManualSeMonths || manualSeLoading}
+                              onClick={() => void handleRunManualSeRankingAnalysis()}
+                              type="button"
+                            >
+                              {manualSeLoading ? "Running…" : "Run comparison"}
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </article>
           </section>
 
-          <section className="se-ranking-bar">
-            <div className="se-ranking-summary">
-              <span className="kicker-inline">SE Ranking analysis</span>
-              <strong>{tray?.count ?? 0} selected leads</strong>
-              <small>
-                {seRankingSummary
-                  ? `${seRankingSummary.summary.eligibleCount} eligible · ${seRankingSummary.summary.estimatedCredits} credits`
-                  : "Select tray leads to estimate cost"}
-              </small>
-            </div>
-            <div className="se-ranking-controls">
-              <label className="field compact-field se-ranking-field">
-                <span>Migration type</span>
-                <select value={seRankingType} onChange={(event) => setSeRankingType(event.target.value as SeRankingAnalysisType)}>
-                  <option value="cms_migration">CMS migration</option>
-                  <option value="domain_migration">Domain migration</option>
-                </select>
-              </label>
-              <div className="se-ranking-estimate">
-                <span>To run {seRankingSummary?.summary.toRunCount ?? 0}</span>
-                <span>Already analyzed {seRankingSummary?.summary.alreadyAnalyzedCount ?? 0}</span>
-              </div>
-            </div>
-            <div className="se-ranking-actions">
-              <button className="ghost-button small-button" disabled={!tray?.count || seRankingLoading} onClick={() => void handleRunSeRankingAnalysis(false)} type="button">
-                Refresh estimate
-              </button>
+          {hasVisibleSeRankingData || query.hasSeRankingAnalysis ? (
+            <div className="se-sort-row">
+              <span className="se-sort-label">SE performance sort</span>
               <button
-                className="primary-button small-button"
-                disabled={!seRankingSummary?.summary.toRunCount || seRankingLoading}
-                onClick={() => void handleRunSeRankingAnalysis(true)}
+                className={`ghost-button small-button ${query.sortBy === "se_ranking_traffic_delta_percent" && query.sortDirection === "desc" ? "timeline-toggle-active" : ""}`}
+                onClick={() => setExplicitSort("se_ranking_traffic_delta_percent", "desc")}
                 type="button"
               >
-                {seRankingLoading ? "Running…" : "Confirm and run"}
+                Traffic winners
               </button>
               <button
-                className="ghost-button small-button"
-                disabled={!seRankingSummary?.summary.alreadyAnalyzedCount || seRankingLoading}
-                onClick={() => void handleRefreshSeRankingAnalysis()}
+                className={`ghost-button small-button ${query.sortBy === "se_ranking_traffic_delta_percent" && query.sortDirection === "asc" ? "timeline-toggle-active" : ""}`}
+                onClick={() => setExplicitSort("se_ranking_traffic_delta_percent", "asc")}
                 type="button"
               >
-                Refresh selected results
+                Traffic losers
+              </button>
+              <button
+                className={`ghost-button small-button ${query.sortBy === "se_ranking_keywords_delta_percent" && query.sortDirection === "desc" ? "timeline-toggle-active" : ""}`}
+                onClick={() => setExplicitSort("se_ranking_keywords_delta_percent", "desc")}
+                type="button"
+              >
+                Keyword winners
+              </button>
+              <button
+                className={`ghost-button small-button ${query.sortBy === "se_ranking_keywords_delta_percent" && query.sortDirection === "asc" ? "timeline-toggle-active" : ""}`}
+                onClick={() => setExplicitSort("se_ranking_keywords_delta_percent", "asc")}
+                type="button"
+              >
+                Keyword losers
               </button>
             </div>
-          </section>
+          ) : null}
 
-          {error ? <div className="error-box">{error}</div> : null}
+          {error && leadTableState !== "error" && leadTableState !== "retrying" ? <div className="error-box">{error}</div> : null}
+
+          {leadStateMessage && (leadTableState !== "ready" || !leads?.items.length) ? (
+            <div className={leadTableState === "error" || leadTableState === "retrying" ? "error-box" : "empty-state"}>
+              {leadStateMessage}
+            </div>
+          ) : null}
 
           <div className="table-shell">
             <table className="sales-grid">
@@ -2463,17 +4031,29 @@ export default function App() {
                       <td className="sticky sticky-company company-cell">
                         <strong>{lead.company || "Unknown company"}</strong>
                       </td>
-                      <td className="sticky sticky-domain mono-cell">{lead.root_domain}</td>
+                      <td className="sticky sticky-domain mono-cell">
+                        <div className="domain-cell">
+                          <span>{lead.root_domain}</span>
+                          <a
+                            className="domain-open-link"
+                            href={`https://${lead.root_domain}`}
+                            onClick={(event) => event.stopPropagation()}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                            title={`Open ${lead.root_domain}`}
+                          >
+                            ↗
+                          </a>
+                        </div>
+                      </td>
                       {effectiveVisibleColumns.map((column) => (
-                        <td key={column}>{renderCell(column, lead, query.salesBuckets)}</td>
+                        <td key={column}>{renderCell(column, lead, query.salesBuckets, openScreamingFrogAudit)}</td>
                       ))}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-
-            {!loading && !leads?.items.length ? <div className="empty-state">No leads match the current filters.</div> : null}
           </div>
 
           <div className="pagination-bar">
@@ -2509,42 +4089,85 @@ export default function App() {
         ) : (
           <>
             <section className="drawer-section">
-              <div className="drawer-meta">
-                <span>{detail.lead.root_domain}</span>
-                <span>{humanizeToken(detail.lead.country)}</span>
-                <span>Tier {detail.lead.priority_tier}</span>
-                <span>Score {detail.lead.total_score}</span>
-              </div>
-              <div className="evidence-strip">
-                <StatusBadge label={evidenceQualityLabel(detail.lead)} tone={confidenceTone(detail.lead.domain_migration_status || detail.lead.cms_migration_status)} />
-                {detail.lead.domain_migration_status !== "none" ? (
-                  <StatusBadge label={`Previous domain: ${humanizeToken(detail.lead.domain_migration_status)}`} tone={confidenceTone(detail.lead.domain_migration_status)} />
-                ) : null}
-                {detail.lead.cms_migration_status !== "none" ? (
-                  <StatusBadge label={`CMS: ${humanizeToken(detail.lead.cms_migration_status)}`} tone={confidenceTone(detail.lead.cms_migration_status)} />
-                ) : null}
+              <div className="drawer-hero">
+                <div className="drawer-hero-top">
+                  <div>
+                    <p className="drawer-domain">{detail.lead.root_domain}</p>
+                    <div className="drawer-meta">
+                      <span>{humanizeToken(detail.lead.country)}</span>
+                      <span>Tier {detail.lead.priority_tier}</span>
+                      <span>Score {detail.lead.total_score}</span>
+                      {detail.lead.vertical ? <span>{detail.lead.vertical}</span> : null}
+                    </div>
+                  </div>
+                  <div className="drawer-nav">
+                    <button onClick={() => navigateDrawer("prev")} type="button">
+                      Previous
+                    </button>
+                    <button onClick={() => navigateDrawer("next")} type="button">
+                      Next
+                    </button>
+                  </div>
+                </div>
+                <div className="evidence-strip">
+                  <StatusBadge
+                    label={evidenceQualityLabel(detail.lead)}
+                    tone={confidenceTone(detail.lead.domain_migration_status || detail.lead.cms_migration_status)}
+                  />
+                  {detail.lead.domain_migration_status !== "none" ? (
+                    <StatusBadge
+                      label={`Previous domain: ${humanizeToken(detail.lead.domain_migration_status)}`}
+                      tone={confidenceTone(detail.lead.domain_migration_status)}
+                    />
+                  ) : null}
+                  {detail.lead.cms_migration_status !== "none" ? (
+                    <StatusBadge
+                      label={`CMS: ${humanizeToken(detail.lead.cms_migration_status)}`}
+                      tone={confidenceTone(detail.lead.cms_migration_status)}
+                    />
+                  ) : null}
+                </div>
+                <div className="drawer-summary-grid">
+                  <MiniMetric
+                    label="Contacts"
+                    value={`${detail.lead.emails.length + detail.lead.telephones.length + detail.lead.people.length}`}
+                  />
+                  <MiniMetric
+                    label="Current stack"
+                    value={
+                      detail.lead.current_platforms[0]
+                        ? humanizeToken(detail.lead.current_platforms[0])
+                        : detail.lead.current_candidate_platforms[0]
+                          ? humanizeToken(detail.lead.current_candidate_platforms[0])
+                          : "Unknown"
+                    }
+                  />
+                  <MiniMetric label="Lead angles" value={`${detail.lead.sales_buckets.length}`} />
+                  <MiniMetric
+                    label="SEO check"
+                    value={detail.seRankingAnalysis ? humanizeToken(String(detail.seRankingAnalysis.status || "saved")) : "Not run"}
+                    tone={detail.seRankingAnalysis ? confidenceTone(String(detail.seRankingAnalysis.status || "")) : "neutral"}
+                  />
+                  <MiniMetric
+                    label="Site check"
+                    value={detail.siteStatusCheck ? humanizeToken(String(detail.siteStatusCheck.status_category || "saved")) : "Not run"}
+                    tone={detail.siteStatusCheck ? confidenceTone(String(detail.siteStatusCheck.status_category || "")) : "neutral"}
+                  />
+                </div>
               </div>
               {detail.data_quality.notes.length ? (
                 <div className="pill-row">
-                  {detail.data_quality.notes.map((note) => (
+                  {detail.data_quality.notes.slice(0, 4).map((note) => (
                     <span className="pill signal-pill" key={note}>
                       {note}
                     </span>
                   ))}
                 </div>
               ) : null}
-              <div className="drawer-nav">
-                <button onClick={() => navigateDrawer("prev")} type="button">
-                  Previous
-                </button>
-                <button onClick={() => navigateDrawer("next")} type="button">
-                  Next
-                </button>
-              </div>
             </section>
 
             <section className="drawer-section">
-              <h3>Migration intelligence</h3>
+              <h3>Migration summary</h3>
               <div className="migration-intelligence-grid">
                 <MigrationHeadlineCard
                   title="Previous domain"
@@ -2568,16 +4191,14 @@ export default function App() {
                   ) : null}
                 </MigrationHeadlineCard>
               </div>
-
-              <div className="migration-detail-grid">
-                <article className="migration-detail-panel">
-                  <div className="migration-detail-header">
-                    <h4>Why we think this is a domain migration</h4>
-                    <span>{detail.migrationIntelligence.summary.domainCandidateCount} candidates</span>
-                  </div>
+              <div className="drawer-accordion-stack">
+                <DrawerAccordion
+                  title="Previous domain evidence"
+                  subtitle={`${detail.migrationIntelligence.summary.domainCandidateCount} candidates`}
+                  defaultOpen={Boolean(detail.migrationIntelligence.domainMigration.bestMatch)}
+                >
                   {detail.migrationIntelligence.domainMigration.bestMatch ? (
                     <>
-                      <SignalChipRow signals={detail.lead.domain_migration_warning_flags} emptyText="No domain-migration warnings for this lead." />
                       <SignalChipRow signals={detail.migrationIntelligence.domainMigration.bestMatch.shared_signal_flags ?? []} />
                       <TechnologyChipRow
                         label="Shared tech"
@@ -2594,108 +4215,132 @@ export default function App() {
                           label="Old country"
                           value={humanizeToken(detail.migrationIntelligence.domainMigration.bestMatch.old_country || "Unknown")}
                         />
-                        <ComparisonTile
-                          label="Old platform"
-                          value={detail.migrationIntelligence.domainMigration.bestMatch.old_ecommerce_platforms || "Unknown"}
-                        />
-                        <ComparisonTile
-                          label="Evidence"
-                          value={detail.migrationIntelligence.domainMigration.bestMatch.fingerprint_strength || "Unknown"}
-                        />
                       </div>
                       <p className="migration-copy">{detail.migrationIntelligence.domainMigration.bestMatch.notes || "No summary note available."}</p>
                       {detail.migrationIntelligence.domainMigration.bestMatch.fingerprint_notes ? (
-                        <p className="migration-copy subtle-copy">
-                          {detail.migrationIntelligence.domainMigration.bestMatch.fingerprint_notes}
-                        </p>
+                        <p className="migration-copy subtle-copy">{detail.migrationIntelligence.domainMigration.bestMatch.fingerprint_notes}</p>
                       ) : null}
                       <DomainCandidateList candidates={detail.migrationIntelligence.domainMigration.candidateShortlist} />
                     </>
                   ) : (
                     <p className="muted">No previous-domain evidence available for this lead.</p>
                   )}
-                </article>
+                </DrawerAccordion>
 
-                <article className="migration-detail-panel">
-                  <div className="migration-detail-header">
-                    <h4>Why we think this is a CMS migration</h4>
-                    <span>{detail.migrationIntelligence.summary.cmsCandidateCount} candidates</span>
-                  </div>
+                <DrawerAccordion
+                  title="CMS migration evidence"
+                  subtitle={`${detail.migrationIntelligence.summary.cmsCandidateCount} candidates`}
+                  defaultOpen={Boolean(detail.migrationIntelligence.cmsMigration.candidatePairs.length)}
+                >
                   {detail.migrationIntelligence.cmsMigration.candidatePairs.length ? (
                     <>
                       <SignalChipRow signals={detail.lead.cms_migration_warning_flags} emptyText="No CMS migration warnings for this lead." />
                       <TechnologyChipRow label="Evidence" values={detail.lead.cms_migration_evidence_flags} />
-                      <MigrationList migrations={detail.migrationIntelligence.cmsMigration.candidatePairs.slice(0, 5)} />
-                      <DrawerTimelineChart rows={detail.timelineRows} />
-                      <ul className="event-list compact-list">
-                        {detail.events.slice(0, 10).map((event, index) => (
-                          <li key={`${event.platform}-${event.event_type}-${index}`}>
-                            <strong>
-                              {humanizeToken(event.platform)} · {humanizeToken(event.event_type)}
-                            </strong>
-                            <span>
-                              first seen {event.first_detected || "n/a"} · last seen {event.last_found || "n/a"}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                      <MigrationList migrations={detail.migrationIntelligence.cmsMigration.candidatePairs.slice(0, 4)} />
                     </>
                   ) : (
-                    <>
-                      <p className="muted">No CMS migration evidence available for this lead.</p>
-                      <DrawerTimelineChart rows={detail.timelineRows} />
-                    </>
+                    <p className="muted">No CMS migration evidence available for this lead.</p>
                   )}
-                </article>
+                </DrawerAccordion>
+
+                <DrawerAccordion title="Timeline and raw events" subtitle={`${detail.timelineRows.length} timelines · ${detail.events.length} events`}>
+                  <DrawerTimelineChart rows={detail.timelineRows} />
+                  <ul className="event-list compact-list">
+                    {detail.events.slice(0, 8).map((event, index) => (
+                      <li key={`${event.platform}-${event.event_type}-${index}`}>
+                        <strong>
+                          {humanizeToken(event.platform)} · {humanizeToken(event.event_type)}
+                        </strong>
+                        <span>
+                          first seen {event.first_detected || "n/a"} · last seen {event.last_found || "n/a"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </DrawerAccordion>
               </div>
             </section>
 
-          <section className="drawer-section">
-            <h3>Bucket evidence</h3>
-            <div className="pill-row">{pillList(detail.lead.sales_buckets, 10)}</div>
-            <ul className="reason-list">
-              {detail.exportReady.bucket_reasons.map((reason) => (
-                  <li key={reason}>{humanizeReason(reason)}</li>
-              ))}
-            </ul>
-          </section>
-
             <section className="drawer-section">
-              <h3>Contacts</h3>
-              <InfoList title="Emails" items={detail.lead.emails} />
-              <InfoList title="Phones" items={detail.lead.telephones} />
-              <InfoList title="People" items={detail.lead.people} />
-              <InfoList title="Verified" items={detail.lead.verified_profiles} />
+              <h3>Prospecting snapshot</h3>
+              <div className="contact-preview-grid">
+                <ContactPreview title="Emails" items={detail.lead.emails} />
+                <ContactPreview title="Phones" items={detail.lead.telephones} />
+                <ContactPreview title="People" items={detail.lead.people} />
+                <ContactPreview title="Verified" items={detail.lead.verified_profiles} />
+              </div>
+              <div className="drawer-accordion-stack">
+                <DrawerAccordion title="Stack details" subtitle="Current and previous platforms, plus key tooling">
+                  <DrawerPillGroup title="Current platform" items={detail.lead.current_platforms.length ? detail.lead.current_platforms : detail.lead.current_candidate_platforms} />
+                  <DrawerPillGroup title="Previous platform seen" items={detail.lead.removed_platforms} />
+                  <DrawerPillGroup title="Marketing" items={detail.lead.marketing_platforms} />
+                  <DrawerPillGroup title="CRM" items={detail.lead.crm_platforms} />
+                  <DrawerPillGroup title="Payments" items={detail.lead.payment_platforms} />
+                  <DrawerPillGroup title="Hosting" items={detail.lead.hosting_providers} />
+                </DrawerAccordion>
+                <DrawerAccordion title="Bucket evidence" subtitle={`${detail.exportReady.bucket_reasons.length} reasons`}>
+                  <div className="pill-row">{pillList(detail.lead.sales_buckets, 10)}</div>
+                  <ul className="reason-list">
+                    {detail.exportReady.bucket_reasons.map((reason) => (
+                      <li key={reason}>{humanizeReason(reason)}</li>
+                    ))}
+                  </ul>
+                </DrawerAccordion>
+              </div>
             </section>
 
             <section className="drawer-section">
-              <h3>Stack</h3>
-              <DrawerPillGroup title="Current platform" items={detail.lead.current_platforms.length ? detail.lead.current_platforms : detail.lead.current_candidate_platforms} />
-              <DrawerPillGroup title="Previous platform seen" items={detail.lead.removed_platforms} />
-              <DrawerPillGroup title="Marketing" items={detail.lead.marketing_platforms} />
-              <DrawerPillGroup title="CRM" items={detail.lead.crm_platforms} />
-              <DrawerPillGroup title="Payments" items={detail.lead.payment_platforms} />
-              <DrawerPillGroup title="Hosting" items={detail.lead.hosting_providers} />
+              <h3>Site status</h3>
+              {detail.siteStatusCheck ? (
+                <DrawerAccordion
+                  title="Saved site check"
+                  subtitle={`Checked ${formatDate(String(detail.siteStatusCheck.checked_at || ""))}`}
+                  defaultOpen
+                >
+                  <div className="se-drawer-grid">
+                    <ComparisonTile label="Status" value={humanizeToken(String(detail.siteStatusCheck.status_category || "unknown"))} />
+                    <ComparisonTile label="Status code" value={String(detail.siteStatusCheck.status_code || "—")} />
+                    <ComparisonTile label="Final URL" value={String(detail.siteStatusCheck.final_url || "—")} />
+                    <ComparisonTile label="Redirect count" value={String(detail.siteStatusCheck.redirect_count || 0)} />
+                  </div>
+                  {detail.siteStatusCheck.error_message ? <p className="migration-copy">{String(detail.siteStatusCheck.error_message)}</p> : null}
+                </DrawerAccordion>
+              ) : (
+                <p className="muted">No site status check has been saved for this lead.</p>
+              )}
             </section>
 
             <section className="drawer-section">
               <h3>SE Ranking outcome</h3>
               {detail.seRankingAnalysis ? (
-                <div className="se-drawer-grid">
-                  <ComparisonTile label="Analysis type" value={humanizeToken(String(detail.seRankingAnalysis.analysis_type || "unknown"))} />
-                  <ComparisonTile label="Market" value={String(detail.seRankingAnalysis.regional_source || "—").toUpperCase()} />
-                  <ComparisonTile label="Migration date" value={formatDate(String(detail.seRankingAnalysis.migration_likely_date || ""))} />
-                  <ComparisonTile label="Checked" value={formatDate(String(detail.seRankingAnalysis.captured_at || ""))} />
-                  <ComparisonTile label="Traffic before" value={formatNumber(Number(detail.seRankingAnalysis.traffic_before || 0))} />
-                  <ComparisonTile label="Traffic last month" value={formatNumber(Number(detail.seRankingAnalysis.traffic_last_month || 0))} />
-                  <ComparisonTile label="Keyword count before" value={formatNumber(Number(detail.seRankingAnalysis.keywords_before || 0))} />
-                  <ComparisonTile label="Keyword count last month" value={formatNumber(Number(detail.seRankingAnalysis.keywords_last_month || 0))} />
-                </div>
-              ) : (
-                <p className="muted">No SE Ranking analysis saved for this lead yet.</p>
-              )}
-              {detail.seRankingAnalysis ? (
-                <>
+                <DrawerAccordion
+                  title="Saved SEO outcome"
+                  subtitle={`${String(detail.seRankingAnalysis.regional_source || "—").toUpperCase()} market · checked ${formatDate(String(detail.seRankingAnalysis.captured_at || ""))}`}
+                  defaultOpen
+                >
+                  <div className="se-drawer-grid">
+                    <ComparisonTile label="Comparison mode" value={humanizeToken(String(detail.seRankingAnalysis.analysis_mode || detail.seRankingAnalysis.analysis_type || "unknown"))} />
+                    <ComparisonTile
+                      label={String(detail.seRankingAnalysis.analysis_mode || "") === "manual" ? "First month" : "Migration date"}
+                      value={
+                        String(detail.seRankingAnalysis.analysis_mode || "") === "manual"
+                          ? formatMonthYear(String(detail.seRankingAnalysis.date_label_first || detail.seRankingAnalysis.first_comparison_month || ""))
+                          : formatDate(String(detail.seRankingAnalysis.migration_likely_date || ""))
+                      }
+                    />
+                    <ComparisonTile
+                      label={String(detail.seRankingAnalysis.analysis_mode || "") === "manual" ? "Second month" : "Comparison month"}
+                      value={
+                        String(detail.seRankingAnalysis.analysis_mode || "") === "manual"
+                          ? formatMonthYear(String(detail.seRankingAnalysis.date_label_second || detail.seRankingAnalysis.second_comparison_month || ""))
+                          : formatMonthYear(String(detail.seRankingAnalysis.comparison_month || detail.seRankingAnalysis.date_label_second || ""))
+                      }
+                    />
+                    <ComparisonTile label="Traffic first month" value={formatNumber(Number(detail.seRankingAnalysis.traffic_before || 0))} />
+                    <ComparisonTile label="Traffic second month" value={formatNumber(Number(detail.seRankingAnalysis.traffic_last_month || 0))} />
+                    <ComparisonTile label="Keywords first month" value={formatNumber(Number(detail.seRankingAnalysis.keywords_before || 0))} />
+                    <ComparisonTile label="Keywords second month" value={formatNumber(Number(detail.seRankingAnalysis.keywords_last_month || 0))} />
+                  </div>
                   <div className="pill-row">
                     {(detail.seRankingAnalysis.outcome_flags ?? []).map((flag) => (
                       <span className="pill signal-pill" key={flag}>
@@ -2707,8 +4352,72 @@ export default function App() {
                     Traffic change <strong>{formatPercent(detail.lead.se_ranking_traffic_delta_percent)}</strong> ({formatSignedNumber(detail.lead.se_ranking_traffic_delta_absolute)}) · keyword change <strong>{formatPercent(detail.lead.se_ranking_keywords_delta_percent)}</strong> ({formatSignedNumber(detail.lead.se_ranking_keywords_delta_absolute)})
                   </p>
                   {detail.lead.se_ranking_error_message ? <p className="migration-copy subtle-copy">{detail.lead.se_ranking_error_message}</p> : null}
-                </>
-              ) : null}
+                </DrawerAccordion>
+              ) : (
+                <p className="muted">No SE Ranking analysis saved for this lead yet.</p>
+              )}
+            </section>
+
+            <section className="drawer-section">
+              <h3>Screaming Frog audit</h3>
+              {detail.screamingFrogAudit ? (
+                <DrawerAccordion
+                  title="Saved local crawl"
+                  subtitle={`${humanizeToken(String(detail.screamingFrogAudit.crawl_mode || "bounded_audit"))} · ${humanizeToken(String(detail.screamingFrogAudit.resolved_platform_family || "generic"))} · checked ${formatDate(String(detail.screamingFrogAudit.checked_at || ""))}`}
+                  defaultOpen
+                >
+                  <div className="se-drawer-grid">
+                    <ComparisonTile label="Audit status" value={humanizeToken(String(detail.screamingFrogAudit.status || "unknown"))} />
+                    <ComparisonTile label="Resolved config" value={humanizeToken(String(detail.screamingFrogAudit.resolved_platform_family || "generic"))} />
+                    <ComparisonTile label="Result quality" value={humanizeToken(String(detail.screamingFrogAudit.result_quality || "unknown"))} />
+                    <ComparisonTile label="Seed strategy" value={humanizeToken(String(detail.screamingFrogAudit.seed_strategy || "unknown"))} />
+                    <ComparisonTile label="Pages crawled" value={String(detail.screamingFrogAudit.pages_crawled || 0)} />
+                    <ComparisonTile label="Homepage status" value={humanizeToken(String(detail.screamingFrogAudit.homepage_status_category || "unknown"))} />
+                    <ComparisonTile label="Homepage code" value={String(detail.screamingFrogAudit.homepage_status_code || "—")} />
+                    <ComparisonTile label="Opportunity score" value={String(detail.screamingFrogAudit.sf_opportunity_score || 0)} />
+                    <ComparisonTile label="Primary issue" value={humanizeToken(String(detail.screamingFrogAudit.sf_primary_issue_family || "none"))} />
+                    <ComparisonTile label="Title issues" value={splitPipe(String(detail.screamingFrogAudit.title_issue_flags || "")).map(humanizeToken).join(", ") || "None"} />
+                    <ComparisonTile label="Meta issues" value={splitPipe(String(detail.screamingFrogAudit.meta_issue_flags || "")).map(humanizeToken).join(", ") || "None"} />
+                    <ComparisonTile label="Canonical issues" value={splitPipe(String(detail.screamingFrogAudit.canonical_issue_flags || "")).map(humanizeToken).join(", ") || "None"} />
+                    <ComparisonTile label="Internal errors" value={`${detail.screamingFrogAudit.internal_4xx_count || 0} 4xx · ${detail.screamingFrogAudit.internal_5xx_count || 0} 5xx`} />
+                    <ComparisonTile label="Category pages" value={String(detail.screamingFrogAudit.category_page_count || 0)} />
+                    <ComparisonTile label="Product pages" value={String(detail.screamingFrogAudit.product_page_count || 0)} />
+                    <ComparisonTile label="Location pages" value={String(detail.screamingFrogAudit.location_page_count || 0)} />
+                    <ComparisonTile label="Service pages" value={String(detail.screamingFrogAudit.service_page_count || 0)} />
+                    <ComparisonTile label="Collection detection" value={`${humanizeToken(String(detail.screamingFrogAudit.collection_detection_status || "unknown"))} · ${detail.screamingFrogAudit.collection_detection_confidence || 0}%`} />
+                    <ComparisonTile label="Collection intro" value={humanizeToken(String(detail.screamingFrogAudit.collection_intro_status || "unknown"))} />
+                    <ComparisonTile label="Title optimisation" value={humanizeToken(String(detail.screamingFrogAudit.title_optimization_status || "unknown"))} />
+                    <ComparisonTile label="Collection products" value={String(detail.screamingFrogAudit.collection_product_count || 0)} />
+                    <ComparisonTile label="Collection schema" value={splitPipe(String(detail.screamingFrogAudit.collection_schema_types || "")).map(humanizeToken).join(", ") || "None"} />
+                  </div>
+                  {String(detail.screamingFrogAudit.sf_primary_issue_reason || "") ? (
+                    <p className="migration-copy subtle-copy">{String(detail.screamingFrogAudit.sf_primary_issue_reason || "")}</p>
+                  ) : null}
+                  {String(detail.screamingFrogAudit.collection_issue_reason || "") ? (
+                    <p className="migration-copy subtle-copy">Collection read: {String(detail.screamingFrogAudit.collection_issue_reason || "")}</p>
+                  ) : null}
+                  {String(detail.screamingFrogAudit.collection_intro_text || "") ? (
+                    <p className="migration-copy subtle-copy">Collection intro snippet: {String(detail.screamingFrogAudit.collection_intro_text || "")}</p>
+                  ) : null}
+                  {Array.isArray(detail.lead.screamingfrog_outreach_hooks) && detail.lead.screamingfrog_outreach_hooks.length ? (
+                    <p className="migration-copy subtle-copy">Email hooks: {detail.lead.screamingfrog_outreach_hooks.join(" | ")}</p>
+                  ) : null}
+                  <div className="drawer-actions">
+                    <button className="ghost-button small-button" onClick={() => openScreamingFrogAudit(detail.lead.root_domain)} type="button">
+                      Open full audit
+                    </button>
+                    {detail.screamingFrogAudit.export_directory ? (
+                      <button className="ghost-button small-button" onClick={() => void copyToClipboard(String(detail.screamingFrogAudit?.export_directory || ""), "audit folder path")} type="button">
+                        Copy audit path
+                      </button>
+                    ) : null}
+                  </div>
+                  {detail.screamingFrogAudit.export_directory ? <p className="migration-copy subtle-copy">Saved exports: {String(detail.screamingFrogAudit.export_directory)}</p> : null}
+                  {detail.screamingFrogAudit.error_message ? <p className="migration-copy">{String(detail.screamingFrogAudit.error_message)}</p> : null}
+                </DrawerAccordion>
+              ) : (
+                <p className="muted">No Screaming Frog audit has been saved for this lead.</p>
+              )}
             </section>
 
             <section className="drawer-section">
@@ -2760,6 +4469,9 @@ export default function App() {
           </div>
         )}
         <div className="tray-actions">
+          <button className="primary-button" disabled={!leads?.total || selectionLoading} onClick={() => void selectAllFilteredLeads()} type="button">
+            {selectionLoading ? "Selecting…" : "Select all filtered"}
+          </button>
           <button className="ghost-button" onClick={toggleTrayVisibility} type="button">
             {effectiveTrayCollapsed ? "Expand tray" : "Collapse tray"}
           </button>
@@ -2813,188 +4525,122 @@ export default function App() {
         </div>
       ) : null}
 
+      {showGuideModal ? (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-card guide-modal" role="dialog" aria-modal="true" aria-label="Lead Console guide">
+            <div className="guide-header">
+              <div>
+                <p className="kicker-inline">In-app README</p>
+                <h3>How Lead Console works</h3>
+              </div>
+              <button className="ghost-button small-button" onClick={() => setShowGuideModal(false)} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="guide-body">
+              <section className="guide-section">
+                <h4>What this tool is for</h4>
+                <p>
+                  Lead Console is a desktop-first lead console for finding outreach angles from platform changes, domain changes, timing signals, and SEO outcomes.
+                  It is designed for shortlist building, not CRM management.
+                </p>
+              </section>
+
+              <section className="guide-section">
+                <h4>Core workflow</h4>
+                <ol className="guide-list guide-list-numbered">
+                  <li>Start with a preset or a broad filter like country, vertical, current platform, or migration status.</li>
+                  <li>Refine in the left rail using common filters first, then advanced tech or agency filters.</li>
+                  <li>Review the spreadsheet for migration signals, timing, contact readiness, and SE Ranking outcome.</li>
+                  <li>Open the right drawer for the best explanation of previous domain, CMS migration, stack, contacts, and evidence.</li>
+                  <li>Add good leads to the selection tray, then export either the filtered set or the selected tray.</li>
+                </ol>
+              </section>
+
+              <section className="guide-section">
+                <h4>How filters work</h4>
+                <ul className="guide-list">
+                  <li>Filters inside the same group use OR. Example: two agencies means either agency can match.</li>
+                  <li>Different filter groups combine with AND. Example: Australia + Shopify + a specific agency means all three must match.</li>
+                  <li>Advanced tech and agency lists are scoped to the current worksheet filters, so they reflect the current result set.</li>
+                  <li>`Select all filtered` adds the full filtered result set to the tray, not just the current page.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>Migration signals</h4>
+                <ul className="guide-list">
+                  <li>`Previous domain candidate` is the best current previous-domain match from redirects and fingerprint evidence.</li>
+                  <li>`Possible CMS migration` is the best current old-platform to new-platform interpretation.</li>
+                  <li>`Confirmed`, `Possible`, `Overlap`, and similar labels are evidence states, not guarantees.</li>
+                  <li>Same-TLD previous domains are often more useful for small owner-operated businesses, but cross-TLD relationships are still shown.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>Migration controls and platform signals</h4>
+                <ul className="guide-list">
+                  <li>`First seen` and `Last seen` use BuiltWith timeline rows, not your own crawl dates.</li>
+                  <li>The cohort chart only appears when one or more timeline technologies are selected.</li>
+                  <li>Platform signal filters affect both the worksheet and exports.</li>
+                  <li>The drawer timeline is for explanation and review; the worksheet remains the main selection surface.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>SE Ranking analysis</h4>
+                <ul className="guide-list">
+                  <li>There are two SE workflows: migration-based analysis and manual month-to-month comparison.</li>
+                  <li>Migration-based SE checks use the likely migration date and compare before vs last month.</li>
+                  <li>You can leave migration date filters blank to review all migrations, then run SE checks only on selected migrations that are within the last 11 months.</li>
+                  <li>Manual comparison lets you choose two months for the currently selected leads.</li>
+                  <li>SE Ranking uses the lead country to choose the market automatically: AU, NZ, or SG.</li>
+                  <li>The worksheet shows the latest saved SE result for a domain, whether it came from migration mode or manual mode.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>Exports and selection tray</h4>
+                <ul className="guide-list">
+                  <li>`Export filtered CSV` exports the current worksheet result set.</li>
+                  <li>`Export selected CSV` exports only domains in the tray.</li>
+                  <li>The tray persists across paging and filter changes.</li>
+                  <li>Use the tray when you want to collect leads from different filter combinations before exporting.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>Important limitations</h4>
+                <ul className="guide-list">
+                  <li>BuiltWith data is probabilistic. Removal rows and snapshot platform fields can be noisy or conflicting.</li>
+                  <li>A detected agency means BuiltWith associated that agency with the site; it does not prove a current formal relationship.</li>
+                  <li>Migration signals are evidence-based interpretations, not legal or forensic proof.</li>
+                  <li>SE Ranking history is monthly, so manual SEO comparison works at month level, not exact day level.</li>
+                  <li>The app is scoped to AU, NZ, and SG only.</li>
+                </ul>
+              </section>
+
+              <section className="guide-section">
+                <h4>Best practice</h4>
+                <p>
+                  Start broad, confirm the story in the drawer, then export only the leads where the migration or platform story creates a clear outreach angle.
+                  Use SE Ranking after you already have a shortlist, because it consumes credits.
+                </p>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );
 }
 
-function MetricCard(props: { label: string; value: number | string }) {
-  return (
-    <article className="metric-card">
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-    </article>
-  );
-}
-
-function MixCard(props: { title: string; data: Array<{ label: string; count: number }>; mode: "stacked" | "bars" }) {
-  const total = props.data.reduce((sum, item) => sum + item.count, 0);
-  return (
-    <article className="mix-card">
-      <div className="mix-header">
-        <h3>{props.title}</h3>
-        <span>{total.toLocaleString()}</span>
-      </div>
-      {props.mode === "stacked" ? (
-        <div className="stacked-bar">
-          {props.data.map((item) => (
-            <span
-              key={item.label}
-              style={{ width: total ? `${(item.count / total) * 100}%` : "0%" }}
-              title={`${item.label}: ${item.count.toLocaleString()}`}
-            />
-          ))}
-        </div>
-      ) : null}
-      <ul className="mix-list">
-        {props.data.map((item) => (
-          <li key={item.label}>
-            <div>
-              <strong>{humanizeToken(item.label)}</strong>
-              <small>{item.count.toLocaleString()}</small>
-            </div>
-            <div className="bar-track">
-              <span style={{ width: total ? `${(item.count / total) * 100}%` : "0%" }} />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </article>
-  );
-}
-
-function TimelineCardBody(props: { timeline: TimelineCohortResponse | null; loading: boolean; dateField: TimelineDateField }) {
-  if (props.loading) {
-    return <div className="timeline-empty-state">Loading timeline…</div>;
-  }
-  if (!props.timeline || !props.timeline.series.length) {
-    return <div className="timeline-empty-state">No technology dates match the current tech timing filters.</div>;
-  }
-  const timeline = props.timeline;
-  const countLabel = props.dateField === "last_seen" ? "Last seen" : "Starts";
-  const rangeLabel = props.dateField === "last_seen" ? "Available last-seen range" : "Available first-seen range";
-
-  return (
-    <div className="timeline-results">
-      <div className="timeline-kpis">
-        <MetricCard label={countLabel} value={timeline.summary.totalStarts.toLocaleString()} />
-        <MetricCard label="Domains" value={timeline.summary.uniqueDomains.toLocaleString()} />
-        <MetricCard label="Periods" value={timeline.summary.periodCount.toLocaleString()} />
-        <MetricCard
-          label="Range"
-          value={
-            timeline.summary.firstPeriod && timeline.summary.lastPeriod
-              ? `${timeline.summary.firstPeriod} → ${timeline.summary.lastPeriod}`
-              : "—"
-          }
-        />
-      </div>
-      <div className="timeline-chart-shell">
-        <TimelineLineChart timeline={timeline} />
-        <div className="timeline-breakdown">
-          <h3>{props.dateField === "last_seen" ? "Last-seen breakdown" : "CMS breakdown"}</h3>
-          <ul className="mix-list">
-            {timeline.technologyBreakdown.map((item) => (
-              <li key={item.platform}>
-                <div>
-                  <strong>{humanizeToken(item.platform)}</strong>
-                  <small>{item.count.toLocaleString()}</small>
-                </div>
-                <div className="bar-track">
-                  <span
-                    style={{
-                      width: timeline.summary.totalStarts
-                        ? `${(item.count / timeline.summary.totalStarts) * 100}%`
-                        : "0%",
-                      background: colourForToken(item.platform),
-                    }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="muted">
-            {rangeLabel}: {timeline.availableRange.minDate ?? "—"} to {timeline.availableRange.maxDate ?? "—"}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TimelineLineChart(props: { timeline: TimelineCohortResponse }) {
-  const periods = props.timeline.series.map((item) => item.period);
-  const platformSeries = props.timeline.seriesByPlatform.filter((series) => series.points.some((point) => point.count > 0));
-  const maxCount = Math.max(
-    1,
-    ...props.timeline.series.map((item) => item.count),
-    ...platformSeries.flatMap((series) => series.points.map((point) => point.count)),
-  );
-  const width = Math.max(periods.length * 28, 360);
-  const height = 170;
-  const plotLeft = 14;
-  const plotRight = 14;
-  const plotTop = 12;
-  const plotBottom = 128;
-  const chartWidth = Math.max(width - plotLeft - plotRight, 1);
-  const chartHeight = plotBottom - plotTop;
-  const xForIndex = (index: number) =>
-    periods.length === 1 ? plotLeft + chartWidth / 2 : plotLeft + (index / Math.max(periods.length - 1, 1)) * chartWidth;
-  const yForCount = (count: number) => plotBottom - (count / maxCount) * chartHeight;
-
-  return (
-    <div className="timeline-chart timeline-line-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Cohort timeline">
-        {[0.25, 0.5, 0.75].map((ratio) => {
-          const y = plotBottom - chartHeight * ratio;
-          return <line className="timeline-grid-line" key={ratio} x1={plotLeft} x2={width - plotRight} y1={y} y2={y} />;
-        })}
-        {props.timeline.series.map((item, index) => {
-          const barWidth = Math.max(chartWidth / Math.max(props.timeline.series.length, 1) - 8, 3);
-          const x = xForIndex(index) - barWidth / 2;
-          const barHeight = Math.max((item.count / maxCount) * chartHeight, 2);
-          const y = plotBottom - barHeight;
-          return <rect className="timeline-bar timeline-bar-total" key={item.period} x={x} y={y} width={barWidth} height={barHeight} rx={3} ry={3} />;
-        })}
-        {platformSeries.map((series) => {
-          const colour = colourForToken(series.platform);
-          const path = series.points
-            .map((point, index) => `${index === 0 ? "M" : "L"} ${xForIndex(index)} ${yForCount(point.count)}`)
-            .join(" ");
-          return (
-            <g key={series.platform}>
-              <path d={path} fill="none" stroke={colour} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              {series.points.map((point, index) => (
-                <circle
-                  key={`${series.platform}-${point.period}`}
-                  cx={xForIndex(index)}
-                  cy={yForCount(point.count)}
-                  fill={colour}
-                  r={point.count ? 2.8 : 1.6}
-                />
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="timeline-axis">
-        <span>{periods[0]}</span>
-        <span>{periods.at(-1)}</span>
-      </div>
-      <div className="timeline-legend">
-        {platformSeries.map((series) => (
-          <span className="timeline-legend-item" key={series.platform}>
-            <i style={{ background: colourForToken(series.platform) }} />
-            {humanizeToken(series.platform)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SidebarSection(props: {
+const SidebarSection = memo(function SidebarSection(props: {
   title: string;
+  description?: string;
   activeCount: number;
   open: boolean;
   onToggle: () => void;
@@ -3009,41 +4655,157 @@ function SidebarSection(props: {
           <strong>{props.open ? "−" : "+"}</strong>
         </div>
       </button>
-      {props.open ? <div className="sidebar-section-body">{props.children}</div> : null}
+      {props.open ? (
+        <div className="sidebar-section-body">
+          {props.description ? <p className="sidebar-section-description">{props.description}</p> : null}
+          {props.children}
+        </div>
+      ) : null}
     </section>
   );
-}
+});
 
-function FilterBlock(props: {
+const FilterBlock = memo(function FilterBlock(props: {
   title: string;
   items: string[];
   selected: string[];
   onToggle: (value: string) => void;
+  onSelectAll?: () => void;
+  onClearAll?: () => void;
   formatLabel?: (value: string) => string;
+  searchable?: boolean;
 }) {
+  const [open, setOpen] = useState(props.selected.length > 0 || props.items.length <= 8);
+  const [search, setSearch] = useState("");
+  const selectedSet = useMemo(() => new Set(props.selected), [props.selected]);
+
+  useEffect(() => {
+    if (props.selected.length > 0) {
+      setOpen(true);
+    }
+  }, [props.selected.length]);
+
+  const deferredSearch = useDeferredValue(search);
+  const normalizedSearch = deferredSearch.trim().toLowerCase();
+  const filteredItems = useMemo(() => {
+    if (!normalizedSearch) {
+      return props.items;
+    }
+    return props.items.filter((item) => (props.formatLabel ? props.formatLabel(item) : item).toLowerCase().includes(normalizedSearch));
+  }, [normalizedSearch, props.formatLabel, props.items]);
+  const showInlineSearch = Boolean(props.searchable && props.items.length > FILTER_SEARCH_THRESHOLD);
+
   return (
-    <section className="filter-block">
-      {props.title ? <h3>{props.title}</h3> : null}
-      <div className="checklist">
-        {props.items.map((item) => (
-          <label key={item}>
-            <input checked={props.selected.includes(item)} onChange={() => props.onToggle(item)} type="checkbox" />
-            <span>{props.formatLabel ? props.formatLabel(item) : item}</span>
-          </label>
-        ))}
+    <section className="filter-block filter-block-collapsible">
+      <div className="filter-block-header">
+        <button className="filter-block-toggle" onClick={() => setOpen((current) => !current)} type="button">
+          <span>{props.title}</span>
+          <small>{props.selected.length ? `${props.selected.length} selected` : `${props.items.length} options`}</small>
+        </button>
+        <div className="filter-block-actions">
+          {props.onSelectAll ? (
+            <button className="filter-block-action" disabled={!props.items.length || props.selected.length === props.items.length} onClick={props.onSelectAll} type="button">
+              Select all
+            </button>
+          ) : null}
+          {props.onClearAll ? (
+            <button className="filter-block-action" disabled={!props.selected.length} onClick={props.onClearAll} type="button">
+              Clear
+            </button>
+          ) : null}
+          <strong>{open ? "−" : "+"}</strong>
+        </div>
       </div>
+      {open ? (
+        props.items.length ? (
+          <>
+            {showInlineSearch ? (
+              <label className="field compact-field filter-block-search">
+                <span>Search</span>
+                <input
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={`Find ${props.title.toLowerCase()}`}
+                  value={search}
+                />
+              </label>
+            ) : null}
+            <div className="checklist">
+              {filteredItems.map((item) => (
+              <label key={item}>
+                <input checked={selectedSet.has(item)} onChange={() => props.onToggle(item)} type="checkbox" />
+                <span>{props.formatLabel ? props.formatLabel(item) : item}</span>
+              </label>
+              ))}
+              {!filteredItems.length ? <p className="muted checklist-empty">No matches for this search.</p> : null}
+            </div>
+          </>
+        ) : (
+          <p className="muted">No options available for this filter.</p>
+        )
+      ) : null}
     </section>
   );
-}
+});
 
-function ToggleRow(props: { label: string; checked: boolean; onChange: () => void }) {
+const ToggleRow = memo(function ToggleRow(props: { label: string; checked: boolean; onChange: () => void }) {
   return (
     <label className="toggle-row">
-      <span>{props.label}</span>
+      <span className="toggle-label">{props.label}</span>
+      <span className={`toggle-switch ${props.checked ? "toggle-switch-on" : ""}`} aria-hidden="true">
+        <i />
+      </span>
       <input checked={props.checked} onChange={props.onChange} type="checkbox" />
     </label>
   );
-}
+});
+
+const DebouncedTextInput = memo(function DebouncedTextInput(props: {
+  value: string;
+  onCommit: (value: string) => void;
+  placeholder?: string;
+  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
+}) {
+  const [draft, setDraft] = useState(props.value);
+  const debouncedDraft = useDebouncedValue(draft, 180);
+
+  useEffect(() => {
+    setDraft(props.value);
+  }, [props.value]);
+
+  useEffect(() => {
+    if (debouncedDraft !== props.value) {
+      props.onCommit(debouncedDraft);
+    }
+  }, [debouncedDraft, props.onCommit, props.value]);
+
+  return (
+    <input
+      inputMode={props.inputMode}
+      onBlur={() => {
+        if (draft !== props.value) {
+          props.onCommit(draft);
+        }
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      placeholder={props.placeholder}
+      value={draft}
+    />
+  );
+});
+
+const AdvancedNumberField = memo(function AdvancedNumberField(props: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <label className="field compact-field">
+      <span>{props.label}</span>
+      <DebouncedTextInput
+        inputMode="numeric"
+        onCommit={(value) => props.onChange(value.replace(/[^\d]/g, ""))}
+        placeholder={props.placeholder}
+        value={props.value}
+      />
+    </label>
+  );
+});
 
 function SortableHeader(props: {
   label: string;
@@ -3080,20 +4842,48 @@ function DrawerPillGroup(props: { title: string; items: string[] }) {
   );
 }
 
-function InfoList(props: { title: string; items: string[] }) {
+function DrawerAccordion(props: { title: string; subtitle?: string; defaultOpen?: boolean; children: ReactNode }) {
   return (
-    <div className="info-list">
-      <span>{props.title}</span>
+    <details className="drawer-accordion" open={props.defaultOpen}>
+      <summary>
+        <div className="drawer-accordion-copy">
+          <strong>{props.title}</strong>
+          {props.subtitle ? <span>{props.subtitle}</span> : null}
+        </div>
+        <span className="drawer-accordion-icon">Open</span>
+      </summary>
+      <div className="drawer-accordion-body">{props.children}</div>
+    </details>
+  );
+}
+
+function MiniMetric(props: { label: string; value: string; tone?: string }) {
+  return (
+    <article className={`mini-metric ${props.tone ? `mini-metric-${props.tone}` : ""}`}>
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </article>
+  );
+}
+
+function ContactPreview(props: { title: string; items: string[]; limit?: number }) {
+  const limit = props.limit ?? 2;
+  return (
+    <article className="contact-preview">
+      <div className="contact-preview-header">
+        <span>{props.title}</span>
+        <strong>{props.items.length ? `${props.items.length} found` : "None"}</strong>
+      </div>
       {props.items.length ? (
         <ul>
-          {props.items.map((item) => (
+          {props.items.slice(0, limit).map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
       ) : (
-        <p className="muted">None</p>
+        <p className="muted">No data available.</p>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -3342,7 +5132,12 @@ function DomainCandidateList(props: {
   );
 }
 
-function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
+function renderCell(
+  column: ColumnKey,
+  lead: Lead,
+  selectedBuckets: string[],
+  openScreamingFrogAudit: (rootDomain: string) => void,
+) {
   switch (column) {
     case "country":
       return (
@@ -3355,6 +5150,14 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
       return <span className="vertical-cell">{lead.vertical || "Unknown"}</span>;
     case "current_platforms":
       return <div className="pill-row">{pillList(lead.current_platforms.length ? lead.current_platforms : lead.current_candidate_platforms, 5)}</div>;
+    case "social":
+      return <span>{formatNumber(lead.social)}</span>;
+    case "sales_revenue":
+      return <span>{formatNumber(lead.sales_revenue)}</span>;
+    case "employees":
+      return <span>{formatNumber(lead.employees)}</span>;
+    case "sku":
+      return <span>{formatNumber(lead.sku)}</span>;
     case "domain_migration":
       return lead.best_old_domain ? (
         <div className="tight-cell migration-cell">
@@ -3399,19 +5202,19 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
       return (
         <div className="tight-cell">
           <strong>{formatNumber(lead.se_ranking_traffic_before)}</strong>
-          <small>{lead.se_ranking_baseline_month || "No baseline month"}</small>
+          <small>{formatMonthYear(lead.se_ranking_date_label_first || lead.se_ranking_first_month || lead.se_ranking_baseline_month || "")}</small>
         </div>
       );
     case "se_traffic_last_month":
       return (
         <div className="tight-cell">
           <strong>{formatNumber(lead.se_ranking_traffic_last_month)}</strong>
-          <small>{lead.se_ranking_comparison_month || "No comparison month"}</small>
+          <small>{formatMonthYear(lead.se_ranking_date_label_second || lead.se_ranking_second_month || lead.se_ranking_comparison_month || "")}</small>
         </div>
       );
     case "se_traffic_change":
       return lead.se_ranking_status ? (
-        <div className="tight-cell">
+        <div className={`tight-cell se-delta-cell ${seDeltaToneClass(lead.se_ranking_traffic_delta_percent)}`}>
           <strong>{formatPercent(lead.se_ranking_traffic_delta_percent)}</strong>
           <small>{formatSignedNumber(lead.se_ranking_traffic_delta_absolute)} visits</small>
         </div>
@@ -3424,7 +5227,7 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
       return <strong>{formatNumber(lead.se_ranking_keywords_last_month)}</strong>;
     case "se_keyword_change":
       return lead.se_ranking_status ? (
-        <div className="tight-cell">
+        <div className={`tight-cell se-delta-cell ${seDeltaToneClass(lead.se_ranking_keywords_delta_percent)}`}>
           <strong>{formatPercent(lead.se_ranking_keywords_delta_percent)}</strong>
           <small>{formatSignedNumber(lead.se_ranking_keywords_delta_absolute)} keywords</small>
         </div>
@@ -3441,7 +5244,7 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
               </span>
             )) : <StatusBadge label={humanizeToken(lead.se_ranking_status)} tone={confidenceTone(lead.se_ranking_status)} />}
           </div>
-          <small>{lead.se_ranking_error_message || humanizeToken(lead.se_ranking_analysis_type || "history only")}</small>
+          <small>{lead.se_ranking_error_message || humanizeToken(lead.se_ranking_analysis_mode || lead.se_ranking_analysis_type || "history only")}</small>
         </div>
       ) : (
         <span className="muted">Not checked</span>
@@ -3450,9 +5253,228 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
       return (
         <div className="tight-cell">
           <strong>{formatDate(lead.se_ranking_checked_at)}</strong>
-          <small>{humanizeToken(lead.se_ranking_analysis_type || "not_checked")}</small>
+          <small>{humanizeToken(lead.se_ranking_analysis_mode || lead.se_ranking_analysis_type || "not_checked")}</small>
         </div>
       );
+    case "site_status":
+      return lead.site_status_category ? (
+        <div className="tight-cell">
+          <StatusBadge label={humanizeToken(lead.site_status_category)} tone={confidenceTone(lead.site_status_category === "ok" ? "confirmed" : lead.site_status_category === "redirect" ? "possible" : "weak")} />
+          <small>{lead.site_status_error || (lead.site_status_final_url ? "Saved site check" : "Status saved")}</small>
+        </div>
+      ) : (
+        <span className="muted">Not checked</span>
+      );
+    case "site_status_code":
+      return lead.site_status_category ? (
+        <div className="tight-cell">
+          <strong>{lead.site_status_code || "—"}</strong>
+          <small>{lead.site_status_redirect_count ? `${lead.site_status_redirect_count} redirects` : "Direct result"}</small>
+        </div>
+      ) : (
+        <span className="muted">—</span>
+      );
+    case "site_final_url":
+      return lead.site_status_final_url ? (
+        <a href={lead.site_status_final_url} onClick={(event) => event.stopPropagation()} rel="noopener noreferrer" target="_blank">
+          {lead.site_status_final_url}
+        </a>
+      ) : (
+        <span className="muted">No final URL</span>
+      );
+    case "site_checked":
+      return (
+        <div className="tight-cell">
+          <strong>{formatDate(lead.site_status_checked_at)}</strong>
+          <small>{humanizeToken(lead.site_status_category || "not checked")}</small>
+        </div>
+      );
+    case "sf_status":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={humanizeToken(lead.screamingfrog_status)} tone={confidenceTone(lead.screamingfrog_status)} />
+          <small>{lead.screamingfrog_result_reason === "rate_limited_429" ? "Recrawl slower" : humanizeToken(lead.screamingfrog_crawl_mode || "bounded_audit")}</small>
+          <button
+            className="ghost-button small-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openScreamingFrogAudit(lead.root_domain);
+            }}
+            type="button"
+          >
+            Open audit
+          </button>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_config":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{humanizeToken(lead.screamingfrog_resolved_platform_family || "generic")}</strong>
+          <small>{lead.screamingfrog_resolved_config_path ? "Auto selected" : "Fallback"}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_quality":
+      return lead.screamingfrog_status ? (
+        <StatusBadge
+          label={lead.screamingfrog_result_reason === "rate_limited_429" ? "Recrawl needed" : humanizeToken(lead.screamingfrog_result_quality || "unknown")}
+          tone={lead.screamingfrog_result_reason === "rate_limited_429" ? "warning" : confidenceTone(lead.screamingfrog_result_quality || "neutral")}
+        />
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_score":
+      return lead.screamingfrog_status ? <strong>{formatNumber(lead.screamingfrog_opportunity_score || 0)}</strong> : <span className="muted">—</span>;
+    case "sf_primary_issue":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{humanizeToken(lead.screamingfrog_primary_issue_family || "none")}</strong>
+          <small>{lead.screamingfrog_primary_issue_reason || "No primary issue reason"}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_checked":
+      return (
+        <div className="tight-cell">
+          <strong>{formatDate(lead.screamingfrog_checked_at)}</strong>
+          <small>{lead.screamingfrog_status ? humanizeToken(lead.screamingfrog_crawl_mode || "bounded_audit") : "Not audited"}</small>
+        </div>
+      );
+    case "sf_pages_crawled":
+      return lead.screamingfrog_status ? <strong>{formatNumber(lead.screamingfrog_pages_crawled)}</strong> : <span className="muted">—</span>;
+    case "sf_homepage_status":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={humanizeToken(lead.screamingfrog_homepage_status || "unknown")} tone={confidenceTone(lead.screamingfrog_homepage_status)} />
+          <small>{lead.screamingfrog_homepage_status_code || "—"}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_title_issues":
+      return lead.screamingfrog_status ? <div className="pill-row">{pillList(lead.screamingfrog_title_issue_flags, 4)}</div> : <span className="muted">Not audited</span>;
+    case "sf_meta_issues":
+      return lead.screamingfrog_status ? <div className="pill-row">{pillList(lead.screamingfrog_meta_issue_flags, 4)}</div> : <span className="muted">Not audited</span>;
+    case "sf_canonical_issues":
+      return lead.screamingfrog_status ? <div className="pill-row">{pillList(lead.screamingfrog_canonical_issue_flags, 4)}</div> : <span className="muted">Not audited</span>;
+    case "sf_internal_errors":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{`${lead.screamingfrog_internal_4xx_count || 0} / ${lead.screamingfrog_internal_5xx_count || 0}`}</strong>
+          <small>{Number(lead.screamingfrog_has_internal_errors || 0) ? "4xx / 5xx found" : "No internal errors"}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_strengths": {
+      const strengths = screamingFrogStrengths(lead);
+      return lead.screamingfrog_status ? (
+        strengths.length ? <div className="pill-row">{pillList(strengths, 4)}</div> : <span className="muted">No standout segmentation strengths</span>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_issue_signals": {
+      const issues = screamingFrogIssueSignals(lead);
+      return lead.screamingfrog_status ? (
+        issues.length ? <div className="pill-row">{pillList(issues, 4)}</div> : <span className="muted">No major issue flags</span>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_heading_health": {
+      const headingHealth = screamingFrogHeadingHealth(lead);
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={headingHealth.label} tone={headingHealth.tone} />
+          <small>{headingHealth.note}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_evidence": {
+      const evidence = screamingFrogEvidenceGrade(lead);
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={evidence.label} tone={evidence.tone} />
+          <small>{evidence.note}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_location_pages":
+      return lead.screamingfrog_status ? <strong>{formatNumber(lead.screamingfrog_location_page_count)}</strong> : <span className="muted">—</span>;
+    case "sf_service_pages":
+      return lead.screamingfrog_status ? <strong>{formatNumber(lead.screamingfrog_service_page_count)}</strong> : <span className="muted">—</span>;
+    case "sf_collection_detection":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{humanizeToken(lead.screamingfrog_collection_detection_status || "unknown")}</strong>
+          <small>{`${formatNumber(lead.screamingfrog_collection_detection_confidence || 0)}% confidence`}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_collection_intro":
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{humanizeToken(lead.screamingfrog_collection_intro_status || "unknown")}</strong>
+          <small>{lead.screamingfrog_collection_issue_family === "collection_page_not_reviewable"
+            ? "No reliable collection/category page captured"
+            : `${formatNumber(lead.screamingfrog_collection_best_intro_confidence || lead.screamingfrog_collection_intro_confidence || 0)}% · ${lead.screamingfrog_collection_issue_reason || "No collection read yet"}`}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_collection_snippet": {
+      const snippet = screamingFrogCollectionSnippet(lead);
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <strong>{snippet.label}</strong>
+          <small>{snippet.note}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_collection_title_signal": {
+      const titleSignal = screamingFrogCollectionTitleSignal(lead);
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={titleSignal.label} tone={titleSignal.tone} />
+          <small>{titleSignal.note}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_collection_confidence": {
+      const confidence = screamingFrogCollectionConfidence(lead);
+      return lead.screamingfrog_status ? (
+        <div className="tight-cell">
+          <StatusBadge label={confidence.label} tone={confidence.tone} />
+          <small>{confidence.note}</small>
+        </div>
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    }
+    case "sf_title_optimization":
+      return lead.screamingfrog_status ? (
+        <StatusBadge label={humanizeToken(lead.screamingfrog_title_optimization_status || "unknown")} tone={confidenceTone(lead.screamingfrog_title_optimization_status || "neutral")} />
+      ) : (
+        <span className="muted">Not audited</span>
+      );
+    case "sf_collection_products":
+      return lead.screamingfrog_status ? <strong>{formatNumber(lead.screamingfrog_collection_product_count)}</strong> : <span className="muted">—</span>;
+    case "sf_collection_schema":
+      return lead.screamingfrog_status ? <div className="pill-row">{pillList(lead.screamingfrog_collection_schema_types, 4)}</div> : <span className="muted">Not audited</span>;
     case "domain_fingerprint_strength":
       return (
         <StatusBadge
@@ -3541,6 +5563,20 @@ function renderCell(column: ColumnKey, lead: Lead, selectedBuckets: string[]) {
       );
     case "priority_tier":
       return <span className={`tier-badge tier-${lead.priority_tier}`}>{lead.priority_tier}</span>;
+    case "marketing_platforms":
+      return <div className="pill-row">{pillList(lead.marketing_platforms, 4)}</div>;
+    case "crm_platforms":
+      return <div className="pill-row">{pillList(lead.crm_platforms, 4)}</div>;
+    case "payment_platforms":
+      return <div className="pill-row">{pillList(lead.payment_platforms, 4)}</div>;
+    case "hosting_providers":
+      return <div className="pill-row">{pillList(lead.hosting_providers, 4)}</div>;
+    case "agencies":
+      return <div className="pill-row">{pillList(lead.agencies, 4)}</div>;
+    case "ai_tools":
+      return <div className="pill-row">{pillList(lead.ai_tools, 4)}</div>;
+    case "compliance_flags":
+      return <div className="pill-row">{pillList(lead.compliance_flags, 4)}</div>;
     case "reason":
       return <span className="reason-cell">{matchingReasonText(lead, selectedBuckets)}</span>;
     default:

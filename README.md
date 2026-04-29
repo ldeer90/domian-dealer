@@ -122,12 +122,76 @@ The frontend reads its API base from `VITE_API_BASE`. If unset, it falls back to
 
 - `http://127.0.0.1:8765/api`
 
+## Fastest Way To Open Lead Console
+
+If you want a reliable one-click launcher on this machine, use:
+
+- [/Users/laurencedeer/Desktop/BuiltWith/Lead Console.command](/Users/laurencedeer/Desktop/BuiltWith/Lead%20Console.command)
+
+That launcher will:
+
+- start the backend if it is not already running
+- start the frontend if it is not already running
+- wait for both to respond
+- open `http://127.0.0.1:5173/`
+
+The shell launcher it uses is:
+
+- [/Users/laurencedeer/Desktop/BuiltWith/tools/start_lead_console.sh](/Users/laurencedeer/Desktop/BuiltWith/tools/start_lead_console.sh)
+
+If you still want a browser bookmark, use a normal bookmark that opens the local app:
+
+```javascript
+javascript:(function(){window.open('http://127.0.0.1:5173/','_blank','noopener,noreferrer');})();
+```
+
+Important:
+
+- the bookmark can open the app
+- the `.command` launcher is what actually starts the local services
+- browsers cannot reliably boot local backend/frontend processes on their own
+
 ## Build The Frontend
 
 ```bash
 cd /Users/laurencedeer/Desktop/BuiltWith/frontend
 npm run build
 ```
+
+## Run The Integrity Audit
+
+To check worksheet, export, analytics, timeline, tray, preset, drawer, and scoped-filter parity:
+
+```bash
+cd /Users/laurencedeer/Desktop/BuiltWith
+python3 tools/audit_integrity.py
+```
+
+To update the golden baseline cases after an intentional change to the truth model:
+
+```bash
+cd /Users/laurencedeer/Desktop/BuiltWith
+python3 tools/audit_integrity.py --update-golden
+```
+
+Audit references:
+
+- `/Users/laurencedeer/Desktop/BuiltWith/LEAD_CONSOLE_INTEGRITY_AUDIT.md`
+- `/Users/laurencedeer/Desktop/BuiltWith/tools/integrity_golden_cases.json`
+
+## Run The Full Pipeline Audit Review
+
+To generate the broader enrichment audit pack covering SE Ranking, site status, Screaming Frog, scoring, and worksheet presentation:
+
+```bash
+cd /Users/laurencedeer/Desktop/BuiltWith
+python3 tools/audit_pipeline_review.py
+```
+
+This writes:
+
+- `/Users/laurencedeer/Desktop/BuiltWith/FULL_STACK_PIPELINE_AUDIT.md`
+- `/Users/laurencedeer/Desktop/BuiltWith/tools/pipeline_audit_report.json`
 
 ## Deploy The Frontend To Vercel
 

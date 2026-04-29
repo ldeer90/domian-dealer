@@ -1,0 +1,244 @@
+{
+  "cases": [
+    {
+      "id": "agency_au_central_coast_web_design",
+      "description": "AU agency scoping parity for a small known result set.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "agencies": [
+          "Central Coast Web Design"
+        ]
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 4,
+        "exportRows": 4,
+        "analyticsFilteredLeads": 4,
+        "sampleDomains": [
+          "centralcoastwebdesign.com.au",
+          "mobilityhireandsales.com.au",
+          "safetravelsolutions.com.au",
+          "willchallenge.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "live_neto_au_tier_abc",
+      "description": "Live-only current-platform parity for a moderate AU Neto cohort.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "tiers": [
+          "A",
+          "B",
+          "C"
+        ],
+        "current_platforms": [
+          "neto"
+        ],
+        "live_sites_only": true
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 1724,
+        "exportRows": 1724,
+        "analyticsFilteredLeads": 1724,
+        "sampleDomains": [
+          "countryculture.com.au",
+          "enurse.com.au",
+          "fancythatcostumes.com.au",
+          "funeralproducts.com.au",
+          "giftboxgallery.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "migration_or_au_ab_contact",
+      "description": "CMS/domain migration timing parity using OR logic on a contactable AU set.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "tiers": [
+          "A",
+          "B"
+        ],
+        "has_contact": true,
+        "has_domain_migration": true,
+        "cms_migration_from": "2025-01-01",
+        "cms_migration_to": "2026-04-30",
+        "domain_migration_from": "2025-01-01",
+        "domain_migration_to": "2026-04-30",
+        "migration_timing_operator": "or"
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 6535,
+        "exportRows": 6535,
+        "analyticsFilteredLeads": 6535,
+        "sampleDomains": [
+          "shadowspec.com",
+          "williecreekpearls.com.au",
+          "sub4.com.au",
+          "arttherapycourses.com.au",
+          "bcfultrasound.com"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "advanced_ai_scope_au_ab",
+      "description": "Advanced grouped-tech scoping parity for AI tools in AU.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "tiers": [
+          "A",
+          "B"
+        ],
+        "ai_tools": [
+          "ChatGPT"
+        ]
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 198,
+        "exportRows": 198,
+        "analyticsFilteredLeads": 198,
+        "sampleDomains": [
+          "bedguard.com.au",
+          "hitechpowersolutions.com.au",
+          "katetroup.com.au",
+          "rocksaltprints.com",
+          "thegrowshop.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "timeline_neto_au_abc",
+      "description": "Timeline cohort parity for a scoped AU Neto technology window.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "tiers": [
+          "A",
+          "B",
+          "C"
+        ],
+        "timeline_platforms": [
+          "neto"
+        ],
+        "timeline_seen_from": "2025-01-01",
+        "timeline_seen_to": "2026-04-30"
+      },
+      "expect_timeline_parity": true,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 49,
+        "exportRows": 49,
+        "analyticsFilteredLeads": 49,
+        "sampleDomains": [
+          "cartridgeworld.com.au",
+          "towerthermal.com",
+          "micksimmons.com.au",
+          "daintreeestates.com",
+          "ncsshop.com.au"
+        ],
+        "timelineUniqueDomains": 49,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "se_ranking_cms_migration",
+      "description": "Latest saved SE Ranking migration analysis parity.",
+      "params": {
+        "has_seranking_analysis": true,
+        "seranking_analysis_types": [
+          "cms_migration"
+        ]
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 293,
+        "exportRows": 293,
+        "analyticsFilteredLeads": 293,
+        "sampleDomains": [
+          "health2000.co.nz",
+          "sub4.com.au",
+          "littlebreadwinner.com.au",
+          "arttherapycourses.com.au",
+          "micador.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "se_ranking_manual_comparison",
+      "description": "Latest saved SE Ranking manual comparison parity.",
+      "params": {
+        "has_seranking_analysis": true,
+        "seranking_analysis_types": [
+          "manual_comparison"
+        ]
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": false,
+      "expectations": {
+        "leadsTotal": 2,
+        "exportRows": 2,
+        "analyticsFilteredLeads": 2,
+        "sampleDomains": [
+          "lightforce.com",
+          "melanithelabel.com"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null
+      }
+    },
+    {
+      "id": "selected_only_small_agency_mutation",
+      "description": "Select-all-filtered parity on a small tray mutation case.",
+      "params": {
+        "countries": [
+          "AU"
+        ],
+        "agencies": [
+          "Central Coast Web Design"
+        ]
+      },
+      "expect_timeline_parity": false,
+      "exercise_select_filtered": true,
+      "expectations": {
+        "leadsTotal": 4,
+        "exportRows": 4,
+        "analyticsFilteredLeads": 4,
+        "sampleDomains": [
+          "centralcoastwebdesign.com.au",
+          "mobilityhireandsales.com.au",
+          "safetravelsolutions.com.au",
+          "willchallenge.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": 4
+      }
+    }
+  ]
+}

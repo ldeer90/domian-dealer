@@ -1,0 +1,71 @@
+{
+  "family": "shopify",
+  "page_type": "collection",
+  "collection_detection": [
+    { "type": "url_regex", "value": "/collections?(/|$)", "confidence": 92 },
+    { "type": "schema_type", "value": "CollectionPage", "confidence": 88 },
+    { "type": "grid_signal", "value": "product", "confidence": 72 }
+  ],
+  "fields": {
+    "main_content": {
+      "primary": { "type": "css", "value": "main .rte, main .collection__description, main [class*='collection'][class*='description']", "confidence": 85 },
+      "rendered_fallback": { "type": "rendered_html", "value": "main .rte, main .collection__description", "confidence": 72 },
+      "structural_fallback": { "type": "regex", "value": "<main[\\s\\S]*?</main>", "confidence": 40 },
+      "null_handling": "missing"
+    },
+    "collection_intro": {
+      "primary": { "type": "css", "value": "main .collection__description, main .collection-description, main .rte", "confidence": 86 },
+      "rendered_fallback": { "type": "rendered_html", "value": "main [class*='collection'][class*='description'], main .rte", "confidence": 74 },
+      "structural_fallback": { "type": "custom_js", "value": "before_first_product_grid", "confidence": 58 },
+      "null_handling": "missing"
+    },
+    "schema_types": {
+      "primary": { "type": "csv_column", "value": "Type-1", "confidence": 88 },
+      "rendered_fallback": { "type": "csv_column", "value": "Unique Types", "confidence": 68 },
+      "structural_fallback": { "type": "regex", "value": "\"@type\"\\s*:\\s*\"([^\"]+)\"", "confidence": 42 },
+      "null_handling": "unknown"
+    },
+    "product_count": {
+      "primary": { "type": "regex", "value": "\"Product\",\"([0-9]+)\"", "confidence": 35 },
+      "rendered_fallback": { "type": "css", "value": "[class*='product-grid'] [href*='/products/']", "confidence": 70 },
+      "structural_fallback": { "type": "url_pattern_count", "value": "/products/", "confidence": 50 },
+      "null_handling": "unknown"
+    },
+    "title": {
+      "primary": { "type": "csv_column", "value": "Title 1", "confidence": 96 },
+      "rendered_fallback": { "type": "raw_html", "value": "<title>(.*?)</title>", "confidence": 70 },
+      "structural_fallback": { "type": "csv_column", "value": "Address", "confidence": 20 },
+      "null_handling": "missing"
+    },
+    "h1": {
+      "primary": { "type": "csv_column", "value": "H1-1", "confidence": 95 },
+      "rendered_fallback": { "type": "raw_html", "value": "<h1[^>]*>(.*?)</h1>", "confidence": 68 },
+      "structural_fallback": { "type": "csv_column", "value": "Title 1", "confidence": 26 },
+      "null_handling": "missing"
+    }
+  },
+  "title_rules": {
+    "default_exact": [
+      "{term}",
+      "{term} | {site}",
+      "{term} - {site}",
+      "{term} – {site}"
+    ],
+    "default_like": [
+      "{term} | {brand}",
+      "{term} – {site}",
+      "{term}: {site}",
+      "{term} - {brand}"
+    ],
+    "term_plus_site": [
+      "{term} | {site}",
+      "{term} | {brand}"
+    ],
+    "safe_customised": [
+      "Shop {term} Online | {site}",
+      "Buy {term} Online | {site}",
+      "{term} Collection | {site}",
+      "{term} Range | {site}"
+    ]
+  }
+}

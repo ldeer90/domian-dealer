@@ -1,0 +1,15 @@
+{
+  "family": "generic",
+  "label": "Generic fallback",
+  "max_seed_urls": 20,
+  "max_category_urls": 3,
+  "max_product_urls": 3,
+  "max_service_urls": 6,
+  "max_location_urls": 4,
+  "max_other_urls": 3,
+  "timeout_seconds": 360,
+  "category_patterns": ["/collections?(/|$)", "/categories?(/|$)", "/shop(/|$)"],
+  "product_patterns": ["/products?(/|$)", "/product(/|$)", "/store(/|$)"],
+  "service_patterns": ["/services?(/|$)", "/solutions?(/|$)", "/treatments?(/|$)", "/repairs?(/|$)", "/installations?(/|$)"],
+  "location_patterns": ["/locations?(/|$)", "/suburbs?(/|$)", "/areas?(/|$)", "/service-areas?(/|$)", "/cities?(/|$)"]
+}

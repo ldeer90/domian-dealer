@@ -1,0 +1,31 @@
+{
+  "family": "magento",
+  "page_type": "collection",
+  "collection_detection": [
+    { "type": "url_regex", "value": "/(category|categories)(/|$)", "confidence": 86 },
+    { "type": "schema_type", "value": "CollectionPage", "confidence": 78 }
+  ],
+  "fields": {},
+  "title_rules": {
+    "default_exact": [
+      "{term}",
+      "{term} | {site}",
+      "{term} - {site}",
+      "{term} / {site}"
+    ],
+    "default_like": [
+      "{term} – {site}",
+      "{term}: {site}",
+      "{term} | {brand}"
+    ],
+    "term_plus_site": [
+      "{term} | {site}",
+      "{term} - {brand}"
+    ],
+    "safe_customised": [
+      "Buy {term} Online | {site}",
+      "{term} for Sale | {site}",
+      "{term} Range | {site}"
+    ]
+  }
+}

@@ -1,0 +1,1055 @@
+{
+  "generatedAt": "2026-04-24T10:12:15.139294+10:00",
+  "integrityAudit": {
+    "results": [
+      {
+        "caseId": "agency_au_central_coast_web_design",
+        "description": "AU agency scoping parity for a small known result set.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 4,
+        "exportRows": 4,
+        "analyticsFilteredLeads": 4,
+        "sampleDomains": [
+          "centralcoastwebdesign.com.au",
+          "mobilityhireandsales.com.au",
+          "safetravelsolutions.com.au",
+          "willchallenge.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 0,
+          "crmPlatforms": 0,
+          "paymentPlatforms": 0,
+          "hostingProviders": 1,
+          "agencies": 1,
+          "aiTools": 0,
+          "complianceFlags": 0
+        }
+      },
+      {
+        "caseId": "live_neto_au_tier_abc",
+        "description": "Live-only current-platform parity for a moderate AU Neto cohort.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 1724,
+        "exportRows": 1724,
+        "analyticsFilteredLeads": 1724,
+        "sampleDomains": [
+          "countryculture.com.au",
+          "enurse.com.au",
+          "fancythatcostumes.com.au",
+          "funeralproducts.com.au",
+          "giftboxgallery.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 57,
+          "crmPlatforms": 20,
+          "paymentPlatforms": 47,
+          "hostingProviders": 82,
+          "agencies": 40,
+          "aiTools": 13,
+          "complianceFlags": 1
+        }
+      },
+      {
+        "caseId": "migration_or_au_ab_contact",
+        "description": "CMS/domain migration timing parity using OR logic on a contactable AU set.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 6535,
+        "exportRows": 6535,
+        "analyticsFilteredLeads": 6535,
+        "sampleDomains": [
+          "shadowspec.com",
+          "williecreekpearls.com.au",
+          "sub4.com.au",
+          "arttherapycourses.com.au",
+          "bcfultrasound.com"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 182,
+          "crmPlatforms": 62,
+          "paymentPlatforms": 149,
+          "hostingProviders": 164,
+          "agencies": 286,
+          "aiTools": 36,
+          "complianceFlags": 2
+        }
+      },
+      {
+        "caseId": "advanced_ai_scope_au_ab",
+        "description": "Advanced grouped-tech scoping parity for AI tools in AU.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 198,
+        "exportRows": 198,
+        "analyticsFilteredLeads": 198,
+        "sampleDomains": [
+          "bedguard.com.au",
+          "hitechpowersolutions.com.au",
+          "katetroup.com.au",
+          "rocksaltprints.com",
+          "thegrowshop.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 42,
+          "crmPlatforms": 24,
+          "paymentPlatforms": 38,
+          "hostingProviders": 67,
+          "agencies": 26,
+          "aiTools": 8,
+          "complianceFlags": 0
+        }
+      },
+      {
+        "caseId": "timeline_neto_au_abc",
+        "description": "Timeline cohort parity for a scoped AU Neto technology window.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 49,
+        "exportRows": 49,
+        "analyticsFilteredLeads": 49,
+        "sampleDomains": [
+          "cartridgeworld.com.au",
+          "towerthermal.com",
+          "micksimmons.com.au",
+          "daintreeestates.com",
+          "ncsshop.com.au"
+        ],
+        "timelineUniqueDomains": 49,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 7,
+          "crmPlatforms": 2,
+          "paymentPlatforms": 21,
+          "hostingProviders": 21,
+          "agencies": 0,
+          "aiTools": 2,
+          "complianceFlags": 0
+        }
+      },
+      {
+        "caseId": "se_ranking_cms_migration",
+        "description": "Latest saved SE Ranking migration analysis parity.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 293,
+        "exportRows": 293,
+        "analyticsFilteredLeads": 293,
+        "sampleDomains": [
+          "health2000.co.nz",
+          "sub4.com.au",
+          "littlebreadwinner.com.au",
+          "arttherapycourses.com.au",
+          "micador.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 29,
+          "crmPlatforms": 11,
+          "paymentPlatforms": 54,
+          "hostingProviders": 55,
+          "agencies": 20,
+          "aiTools": 7,
+          "complianceFlags": 1
+        }
+      },
+      {
+        "caseId": "se_ranking_manual_comparison",
+        "description": "Latest saved SE Ranking manual comparison parity.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 2,
+        "exportRows": 2,
+        "analyticsFilteredLeads": 2,
+        "sampleDomains": [
+          "lightforce.com",
+          "melanithelabel.com"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": null,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 5,
+          "crmPlatforms": 1,
+          "paymentPlatforms": 6,
+          "hostingProviders": 3,
+          "agencies": 0,
+          "aiTools": 0,
+          "complianceFlags": 0
+        }
+      },
+      {
+        "caseId": "selected_only_small_agency_mutation",
+        "description": "Select-all-filtered parity on a small tray mutation case.",
+        "ok": true,
+        "mismatches": [],
+        "leadsTotal": 4,
+        "exportRows": 4,
+        "analyticsFilteredLeads": 4,
+        "sampleDomains": [
+          "centralcoastwebdesign.com.au",
+          "mobilityhireandsales.com.au",
+          "safetravelsolutions.com.au",
+          "willchallenge.com.au"
+        ],
+        "timelineUniqueDomains": null,
+        "selectedOnlyTotal": 4,
+        "scopedOptionChecks": {
+          "marketingPlatforms": 0,
+          "crmPlatforms": 0,
+          "paymentPlatforms": 0,
+          "hostingProviders": 1,
+          "agencies": 1,
+          "aiTools": 0,
+          "complianceFlags": 0
+        }
+      }
+    ],
+    "exitCode": 0,
+    "stderr": "",
+    "stdout": "# Integrity Audit Report\n\n| Case | Status | Leads | Export | Analytics | Notes |\n| --- | --- | ---: | ---: | ---: | --- |\n| agency_au_central_coast_web_design | PASS | 4 | 4 | 4 | OK |\n| live_neto_au_tier_abc | PASS | 1724 | 1724 | 1724 | OK |\n| migration_or_au_ab_contact | PASS | 6535 | 6535 | 6535 | OK |\n| advanced_ai_scope_au_ab | PASS | 198 | 198 | 198 | OK |\n| timeline_neto_au_abc | PASS | 49 | 49 | 49 | OK |\n| se_ranking_cms_migration | PASS | 293 | 293 | 293 | OK |\n| se_ranking_manual_comparison | PASS | 2 | 2 | 2 | OK |\n| selected_only_small_agency_mutation | PASS | 4 | 4 | 4 | OK |"
+  },
+  "schemas": {
+    "tables": {
+      "seranking_analysis_snapshots": [
+        {
+          "name": "root_domain",
+          "type": "TEXT"
+        },
+        {
+          "name": "analysis_type",
+          "type": "TEXT"
+        },
+        {
+          "name": "regional_source",
+          "type": "TEXT"
+        },
+        {
+          "name": "migration_likely_date",
+          "type": "TEXT"
+        },
+        {
+          "name": "baseline_month",
+          "type": "TEXT"
+        },
+        {
+          "name": "comparison_month",
+          "type": "TEXT"
+        },
+        {
+          "name": "traffic_before",
+          "type": "INTEGER"
+        },
+        {
+          "name": "traffic_last_month",
+          "type": "INTEGER"
+        },
+        {
+          "name": "traffic_delta_absolute",
+          "type": "INTEGER"
+        },
+        {
+          "name": "traffic_delta_percent",
+          "type": "REAL"
+        },
+        {
+          "name": "keywords_before",
+          "type": "INTEGER"
+        },
+        {
+          "name": "keywords_last_month",
+          "type": "INTEGER"
+        },
+        {
+          "name": "keywords_delta_absolute",
+          "type": "INTEGER"
+        },
+        {
+          "name": "keywords_delta_percent",
+          "type": "REAL"
+        },
+        {
+          "name": "price_before",
+          "type": "REAL"
+        },
+        {
+          "name": "price_last_month",
+          "type": "REAL"
+        },
+        {
+          "name": "price_delta_absolute",
+          "type": "REAL"
+        },
+        {
+          "name": "price_delta_percent",
+          "type": "REAL"
+        },
+        {
+          "name": "outcome_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "captured_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "status",
+          "type": "TEXT"
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT"
+        },
+        {
+          "name": "analysis_mode",
+          "type": "TEXT"
+        },
+        {
+          "name": "date_mode",
+          "type": "TEXT"
+        },
+        {
+          "name": "first_comparison_month",
+          "type": "TEXT"
+        },
+        {
+          "name": "second_comparison_month",
+          "type": "TEXT"
+        },
+        {
+          "name": "date_label_first",
+          "type": "TEXT"
+        },
+        {
+          "name": "date_label_second",
+          "type": "TEXT"
+        }
+      ],
+      "site_status_snapshots": [
+        {
+          "name": "root_domain",
+          "type": "TEXT"
+        },
+        {
+          "name": "requested_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "final_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "status_code",
+          "type": "INTEGER"
+        },
+        {
+          "name": "status_category",
+          "type": "TEXT"
+        },
+        {
+          "name": "redirect_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "checked_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT"
+        }
+      ],
+      "screamingfrog_audit_snapshots": [
+        {
+          "name": "root_domain",
+          "type": "TEXT"
+        },
+        {
+          "name": "crawl_mode",
+          "type": "TEXT"
+        },
+        {
+          "name": "checked_at",
+          "type": "TEXT"
+        },
+        {
+          "name": "status",
+          "type": "TEXT"
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT"
+        },
+        {
+          "name": "pages_crawled",
+          "type": "INTEGER"
+        },
+        {
+          "name": "homepage_final_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_status_code",
+          "type": "INTEGER"
+        },
+        {
+          "name": "homepage_status_category",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_indexability",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_title",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_meta_description",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_canonical",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_word_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "redirect_presence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "blocked_or_noindex",
+          "type": "INTEGER"
+        },
+        {
+          "name": "title_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "meta_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "canonical_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "h1_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "indexable_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "internal_3xx_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "internal_4xx_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "internal_5xx_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "schema_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "location_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "service_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "has_internal_errors",
+          "type": "INTEGER"
+        },
+        {
+          "name": "export_directory",
+          "type": "TEXT"
+        },
+        {
+          "name": "resolved_platform_family",
+          "type": "TEXT"
+        },
+        {
+          "name": "resolved_config_path",
+          "type": "TEXT"
+        },
+        {
+          "name": "requested_homepage_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "discovered_final_homepage_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "seed_strategy",
+          "type": "TEXT"
+        },
+        {
+          "name": "seed_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "sitemap_found",
+          "type": "INTEGER"
+        },
+        {
+          "name": "sitemap_url",
+          "type": "TEXT"
+        },
+        {
+          "name": "sitemap_source",
+          "type": "TEXT"
+        },
+        {
+          "name": "result_quality",
+          "type": "TEXT"
+        },
+        {
+          "name": "result_reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "schema_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_content_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "product_metadata_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "default_title_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "homepage_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "category_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "product_page_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "sf_opportunity_score",
+          "type": "INTEGER"
+        },
+        {
+          "name": "sf_primary_issue_family",
+          "type": "TEXT"
+        },
+        {
+          "name": "sf_primary_issue_reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "sf_outreach_hooks",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_detection_status",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_detection_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_main_content",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_main_content_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_main_content_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_intro_text",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_intro_position",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_intro_status",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_intro_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_intro_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_schema_types",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_schema_types_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_schema_types_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_product_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_product_count_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_product_count_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_title_value",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_title_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_title_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "collection_h1_value",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_h1_method",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_h1_confidence",
+          "type": "INTEGER"
+        },
+        {
+          "name": "title_optimization_status",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_issue_family",
+          "type": "TEXT"
+        },
+        {
+          "name": "collection_issue_reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "heading_issue_flags",
+          "type": "TEXT"
+        },
+        {
+          "name": "heading_outline_score",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_outline_summary",
+          "type": "TEXT"
+        },
+        {
+          "name": "heading_pages_analyzed",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_h1_missing_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_multiple_h1_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_duplicate_h1_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_pages_with_h2_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_generic_heading_count",
+          "type": "INTEGER"
+        },
+        {
+          "name": "heading_repeated_heading_count",
+          "type": "INTEGER"
+        }
+      ],
+      "export_tray_items": [
+        {
+          "name": "root_domain",
+          "type": "TEXT"
+        },
+        {
+          "name": "added_at",
+          "type": "TEXT"
+        }
+      ]
+    },
+    "rowCounts": {
+      "seranking_analysis_snapshots": 296,
+      "site_status_snapshots": 1,
+      "screamingfrog_audit_snapshots": 14,
+      "export_tray_items": 2
+    }
+  },
+  "pipelineContracts": [
+    {
+      "pipeline": "SE Ranking",
+      "discovery": "Tray-driven or manual comparison input -> latest snapshot per root_domain selected in join",
+      "extraction": [
+        "analysis_type",
+        "analysis_mode",
+        "regional_source",
+        "traffic deltas",
+        "keyword deltas",
+        "outcome_flags",
+        "captured_at/status/error"
+      ],
+      "scoring": "Used mainly as supporting evidence and worksheet sorting, not as a deep additive score layer",
+      "presentation": "Worksheet columns, drawer summary, export, filters",
+      "segmentation": "Supports momentum/change buckets but can drift if latest-result semantics are unclear"
+    },
+    {
+      "pipeline": "Site status",
+      "discovery": "Direct HTTP request to selected tray domains with follow-redirect classification",
+      "extraction": [
+        "requested_url",
+        "final_url",
+        "status_code",
+        "status_category",
+        "redirect_count",
+        "checked_at",
+        "error_message"
+      ],
+      "scoring": "Currently more cleanup-oriented than score-driving",
+      "presentation": "Worksheet, filters, drawer, export",
+      "segmentation": "Useful for dead/redirect cleanup and live-site exclusions; weak as a standalone outreach signal"
+    },
+    {
+      "pipeline": "Screaming Frog",
+      "discovery": "CMS-aware seed discovery -> redirect-aware homepage -> sitemap/category ranking -> bounded seed cap",
+      "extraction": [
+        "crawl/result quality",
+        "title/meta/canonical/H1 flags",
+        "schema/internal error counts",
+        "collection intelligence",
+        "heading intelligence",
+        "seed diagnostics"
+      ],
+      "scoring": "Primary enrichment score layer via opportunity score, issue family, issue reason, outreach hooks, lead score bonus",
+      "presentation": "Worksheet, drawer, full audit workspace, export, filters",
+      "segmentation": "Strongest audit pipeline for cold-email segmentation, but also the highest-risk for extraction and scoring drift"
+    }
+  ],
+  "signalInventory": [
+    {
+      "pipeline": "SE Ranking",
+      "signalFamilies": [
+        "analysis mode/type",
+        "traffic deltas",
+        "keyword deltas",
+        "price deltas",
+        "outcome flags",
+        "status/error"
+      ],
+      "snapshotRows": 296,
+      "latestStatusCounts": {
+        "success": 283,
+        "partial": 11,
+        "error": 2
+      },
+      "topOutcomeFlags": {
+        "traffic_down": 141,
+        "keywords_down": 132,
+        "traffic_up": 114,
+        "traffic_down_20_plus": 110,
+        "traffic_up_20_plus": 87,
+        "keywords_up": 87,
+        "keywords_down_20_plus": 70,
+        "traffic_up_50_plus": 66,
+        "keywords_flat": 64,
+        "keywords_up_20_plus": 46
+      }
+    },
+    {
+      "pipeline": "Site status",
+      "signalFamilies": [
+        "status category",
+        "status code",
+        "redirect count",
+        "final URL",
+        "error"
+      ],
+      "snapshotRows": 1,
+      "statusCategoryCounts": {
+        "redirect": 1
+      }
+    },
+    {
+      "pipeline": "Screaming Frog",
+      "signalFamilies": [
+        "crawl quality",
+        "seed diagnostics",
+        "technical issue flags",
+        "collection intelligence",
+        "heading intelligence",
+        "opportunity scoring"
+      ],
+      "snapshotRows": 14,
+      "statusCounts": {
+        "success": 12,
+        "partial": 1,
+        "error": 1
+      },
+      "resultQualityCounts": {
+        "useful": 12,
+        "partial": 1,
+        "error": 1
+      },
+      "resultReasonCounts": {
+        "": 12,
+        "redirect_only_homepage": 1,
+        "bounded crawl only captured the homepage": 1
+      },
+      "primaryIssueFamilies": {
+        "product_metadata_gap": 6,
+        "collection_content_gap": 5,
+        "technical_breakage": 2,
+        "schema_gap": 1
+      },
+      "collectionIntroStatuses": {
+        "missing_intro": 7,
+        "strong_intro": 4,
+        "": 2,
+        "below_grid_copy": 1
+      },
+      "titleOptimizationStatuses": {
+        "unknown": 8,
+        "customised": 2,
+        "": 2,
+        "term_plus_site": 1,
+        "default_exact": 1
+      },
+      "topSchemaIssueFlags": {
+        "missing_schema": 14
+      },
+      "topCollectionIssueFlags": {
+        "missing_intro": 7
+      },
+      "topDefaultTitleFlags": {
+        "default_exact": 1,
+        "term_plus_site": 1
+      },
+      "topHeadingIssueFlags": {
+        "missing_h1": 8,
+        "repeated_heading_text": 7,
+        "weak_heading_depth": 5,
+        "multiple_h1": 4,
+        "generic_heading_patterns": 3,
+        "duplicate_h1_across_pages": 2
+      }
+    }
+  ],
+  "scoringMatrix": [
+    {
+      "field": "homepage_status_category",
+      "pipeline": "Screaming Frog",
+      "weight": "High",
+      "issueFamily": "technical_breakage",
+      "outreachRelevance": "High"
+    },
+    {
+      "field": "internal_4xx_count/internal_5xx_count",
+      "pipeline": "Screaming Frog",
+      "weight": "High",
+      "issueFamily": "technical_breakage",
+      "outreachRelevance": "High"
+    },
+    {
+      "field": "schema_page_count",
+      "pipeline": "Screaming Frog",
+      "weight": "Medium",
+      "issueFamily": "schema_gap",
+      "outreachRelevance": "Medium"
+    },
+    {
+      "field": "collection_intro_status",
+      "pipeline": "Screaming Frog",
+      "weight": "High",
+      "issueFamily": "collection_content_gap",
+      "outreachRelevance": "High"
+    },
+    {
+      "field": "title_optimization_status",
+      "pipeline": "Screaming Frog",
+      "weight": "Medium",
+      "issueFamily": "default_collection_title",
+      "outreachRelevance": "High"
+    },
+    {
+      "field": "title_issue_flags/meta_issue_flags",
+      "pipeline": "Screaming Frog",
+      "weight": "Medium",
+      "issueFamily": "product_metadata_gap",
+      "outreachRelevance": "Medium"
+    },
+    {
+      "field": "heading_issue_flags",
+      "pipeline": "Screaming Frog",
+      "weight": "Medium",
+      "issueFamily": "heading_hygiene",
+      "outreachRelevance": "Medium"
+    },
+    {
+      "field": "traffic_delta_percent/keywords_delta_percent",
+      "pipeline": "SE Ranking",
+      "weight": "Support",
+      "issueFamily": "Outcome only",
+      "outreachRelevance": "Medium"
+    },
+    {
+      "field": "site_status_category",
+      "pipeline": "Site status",
+      "weight": "Support",
+      "issueFamily": "Cleanup only",
+      "outreachRelevance": "Low"
+    },
+    {
+      "field": "domain_migration_status/cms_migration_status",
+      "pipeline": "Core lead",
+      "weight": "High",
+      "issueFamily": "Migration trigger",
+      "outreachRelevance": "High"
+    }
+  ],
+  "spreadsheetReview": {
+    "defaultVisibleColumns": [
+      "country",
+      "vertical",
+      "current_platforms",
+      "cms_migration",
+      "cms_migration_date",
+      "domain_migration",
+      "domain_migration_date",
+      "sales_buckets",
+      "technology_spend",
+      "total_score",
+      "priority_tier",
+      "domain_fingerprint_strength",
+      "domain_shared_signals",
+      "reason",
+      "contact_status"
+    ],
+    "autoScreamingFrogColumns": [
+      "sf_status",
+      "sf_config",
+      "sf_quality",
+      "sf_score",
+      "sf_primary_issue",
+      "sf_issue_signals",
+      "sf_strengths",
+      "sf_heading_health",
+      "sf_collection_title_signal",
+      "sf_collection_intro",
+      "sf_homepage_status",
+      "sf_internal_errors",
+      "sf_checked"
+    ],
+    "promote": [
+      "sf_title_optimization",
+      "sf_collection_intro",
+      "sf_issue_signals",
+      "sf_strengths",
+      "sf_heading_health"
+    ],
+    "keep": [
+      "sf_status",
+      "sf_score",
+      "sf_primary_issue",
+      "sf_homepage_status",
+      "sf_internal_errors",
+      "sf_checked"
+    ],
+    "demote": [
+      "sf_config",
+      "sf_quality",
+      "sf_pages_crawled",
+      "site_status_code",
+      "site_final_url"
+    ],
+    "notes": [
+      "Worksheet currently exposes many diagnostics well, but default visibility still underplays collection title and collection intro quality.",
+      "Site status fields are useful for cleanup but weaker as primary spreadsheet signals for outreach segmentation.",
+      "SE deltas are valuable, but outcome flags may be too secondary or verbose compared with change columns."
+    ]
+  },
+  "findings": [
+    {
+      "priority": "P1",
+      "title": "Collection intro extraction likely still mixes real gaps with extraction misses",
+      "detail": "`missing_intro` appears on 7/14 saved audits, so extraction quality should be reviewed before treating the signal as universally strong."
+    },
+    {
+      "priority": "P1",
+      "title": "CMS-specific collection title signals are still underrepresented in the worksheet",
+      "detail": "The sheet auto-shows many Screaming Frog diagnostics, but it does not currently auto-promote collection title optimisation, which is one of the strongest direct outreach signals."
+    },
+    {
+      "priority": "P2",
+      "title": "Site status appears useful mainly for cleanup, not segmentation",
+      "detail": "The current stored site-status categories are narrow enough that they likely work better as exclusions and hygiene checks than as first-class cold-email buckets."
+    },
+    {
+      "priority": "P2",
+      "title": "Current parity harness is API-strong but enrichment-light",
+      "detail": "The existing integrity cases cover worksheet/export/analytics/timeline/preset parity well, but they do not yet validate Screaming Frog, site status, or deeper worksheet usefulness decisions with the same rigor."
+    }
+  ],
+  "roadmap": [
+    "Extend the existing integrity harness with enrichment-specific golden cases for Screaming Frog, site status, and SE Ranking display parity.",
+    "Add a crawl-quality audit layer that checks seed selection, weak/partial/error classification, and 429-required-recrawl behavior.",
+    "Refactor scoring review into an explicit matrix and rebalance over-dominant issue families before adding more outreach buckets.",
+    "Promote collection title, collection intro, heading health, and compact issue/strength summaries in the worksheet default SF view.",
+    "Demote or remove low-signal diagnostics from primary spreadsheet space when they do not improve segmentation or shortlist review."
+  ]
+}
